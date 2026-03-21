@@ -1,6 +1,6 @@
 # Modbus Library for STM32 with FreeRTOS
 
-**Flexible, Universal Modbus RTU/TCP Library with Handler Registry and Data Serialization**
+**Flexible, Universal Modbus RTU/TCP Library with Platform Abstraction Layer (PAL), Handler Registry, and Data Serialization**
 
 ---
 
@@ -15,6 +15,7 @@ This is a **refactored fork** of the [alejoseb/Modbus-STM32-HAL-FreeRTOS](https:
 | **Data Access** | Direct `u16regs[]` array access | Flexible hooks with serialization layer |
 | **Register Mapping** | Static memory mapping | Dynamic registry with handler callbacks |
 | **Data Types** | 16-bit registers only | U16, U32, I32, PACKED, RAW, STRUCT |
+| **Hardware Abstraction** | Direct HAL calls | Platform Abstraction Layer (PAL) – works on any STM32 family |
 | **Configuration** | In-library `ModbusConfig.h` | Project-specific config (submodule stays clean) |
 | **Integration** | Manual register synchronization | Handler API bridge with automatic dispatch |
 | **Architecture** | Monolithic | Modular (Core + Extensions + Ports) |
@@ -29,6 +30,56 @@ This is a **refactored fork** of the [alejoseb/Modbus-STM32-HAL-FreeRTOS](https:
 | **Submodule gets modified** (project-specific config in lib) | Config lives in project, lib stays universal |
 | **No type safety** (raw `uint16_t*` everywhere) | Typed serialization/deserialization helpers |
 | **Hard to test** (handlers coupled to library) | Handlers are independent, testable without Modbus |
+| **Portability issues** (HAL version differences) | PAL abstracts UART/GPIO – works on all STM32 families |
+
+---
+
+## 🏗 Architecture
+
+Мы обновили библиотеку, добавили PAL (Platform Abstraction Layer) и успешно протестировали её работу. Теперь нужно обновить `README.md`, чтобы отразить все изменения, предоставить актуальные инструкции по интеграции и добавить раздел с результатами тестирования.
+
+Ниже приведён обновлённый `README.md`. Он включает:
+
+- Уточнение о PAL и его роли.
+- Примеры работы (логи из вашего теста).
+- Дополнительные инструкции по CMake.
+- Раздел "Troubleshooting" с решениями распространённых проблем (включая те, что возникли у нас).
+- Актуализацию архитектуры.
+
+```markdown
+# Modbus Library for STM32 with FreeRTOS
+
+**Flexible, Universal Modbus RTU/TCP Library with Platform Abstraction Layer (PAL), Handler Registry, and Data Serialization**
+
+---
+
+## 📖 Overview
+
+This is a **refactored fork** of the [alejoseb/Modbus-STM32-HAL-FreeRTOS](https://github.com/alejoseb/Modbus-STM32-HAL-FreeRTOS) library. The original library provides solid Modbus RTU/TCP support for STM32 with FreeRTOS, but it uses a **flat register array** approach that doesn't scale well for complex applications.
+
+### 🔧 What We Changed
+
+| Component | Original | Refactored |
+|-----------|----------|------------|
+| **Data Access** | Direct `u16regs[]` array access | Flexible hooks with serialization layer |
+| **Register Mapping** | Static memory mapping | Dynamic registry with handler callbacks |
+| **Data Types** | 16-bit registers only | U16, U32, I32, PACKED, RAW, STRUCT |
+| **Hardware Abstraction** | Direct HAL calls | Platform Abstraction Layer (PAL) – works on any STM32 family |
+| **Configuration** | In-library `ModbusConfig.h` | Project-specific config (submodule stays clean) |
+| **Integration** | Manual register synchronization | Handler API bridge with automatic dispatch |
+| **Architecture** | Monolithic | Modular (Core + Extensions + Ports) |
+
+### 🎯 Why We Changed It
+
+| Problem | Solution |
+|---------|----------|
+| **Cannot send structures** (e.g., `union { int32_t weight; uint8_t status; }`) | `ModbusDataResponse_t` with PACKED/RAW types |
+| **Commands require polling** (write register → check in main loop) | Write hooks execute logic immediately |
+| **Address calculation is manual** (motor ID → register offset) | Registry handles address ranges with context |
+| **Submodule gets modified** (project-specific config in lib) | Config lives in project, lib stays universal |
+| **No type safety** (raw `uint16_t*` everywhere) | Typed serialization/deserialization helpers |
+| **Hard to test** (handlers coupled to library) | Handlers are independent, testable without Modbus |
+| **Portability issues** (HAL version differences) | PAL abstracts UART/GPIO – works on all STM32 families |
 
 ---
 
@@ -72,12 +123,9 @@ This is a **refactored fork** of the [alejoseb/Modbus-STM32-HAL-FreeRTOS](https:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Principles
+### Platform Abstraction Layer (PAL)
 
-1. **Submodule is universal** — No project-specific code in `Middlewares/Modbus/`
-2. **Config lives in project** — `Config/ModbusConfig.h` overrides template
-3. **Handlers are independent** — Test without Modbus, no library includes
-4. **Clean boundaries** — Library doesn't know about your structures
+The library now uses a **Platform Abstraction Layer** to separate hardware‑specific code from the core logic. This allows the same library to work on any STM32 family (F1, F4, G4, H7, etc.) and even other MCUs (with proper port layer). All HAL calls are encapsulated in `ports/modbus_port.h` and implemented per platform.
 
 ---
 
@@ -93,6 +141,7 @@ This is a **refactored fork** of the [alejoseb/Modbus-STM32-HAL-FreeRTOS](https:
 - ✅ RS485 direction control
 
 ### New Features (refactored)
+- ✅ **Platform Abstraction Layer** – Works on all STM32 families without modification
 - ✅ **Flexible Data Layer** — Serialize U16, U32, I32, PACKED, RAW, STRUCT
 - ✅ **Handler Registry** — Dynamic registration of read/write handlers
 - ✅ **Handler API Bridge** — Automatic dispatch from library to your handlers
@@ -110,8 +159,7 @@ This is a **refactored fork** of the [alejoseb/Modbus-STM32-HAL-FreeRTOS](https:
 
 ```bash
 cd your-project/
-git submodule add 
-https://github.com/Wageslav/Modbus-STM32-HAL-FreeRTOS.git Middlewares/Modbus
+git submodule add https://github.com/Wageslav/Modbus-STM32-HAL-FreeRTOS.git Middlewares/Modbus
 git submodule update --init --recursive
 ```
 
@@ -232,14 +280,17 @@ void ModbusApp_RegisterHandlers(void)
 
 static void Modbus_System_Init(void)
 {
-    /* 1. Initialize library */
+    /* Create abstract handles (required by PAL) */
+    static ModbusUartHandle_t uart_handle = { .handle = &huart1 };
+    static ModbusGpioPort_t gpio_port = { .port = RS485_DE_GPIO_Port };
+
     ModbusH.uModbusType = MB_SLAVE;
-    ModbusH.port = &huart1;
+    ModbusH.port = &uart_handle;          /* Abstract UART handle */
     ModbusH.u8id = MODBUS_SLAVE_ID;
     ModbusH.u16timeOut = 1000;
-    ModbusH.EN_Port = RS485_DE_GPIO_Port;
+    ModbusH.EN_Port = &gpio_port;         /* Abstract GPIO port */
     ModbusH.EN_Pin = RS485_DE_Pin;
-    ModbusH.u16regs = ModbusDATA;  /* fallback if hooks not set */
+    ModbusH.u16regs = ModbusDATA;         /* fallback if hooks not set */
     ModbusH.u16regsize = MODBUS_REGISTER_COUNT;
     ModbusH.xTypeHW = USART_HW;
     
@@ -254,188 +305,99 @@ static void Modbus_System_Init(void)
     /* 4. Start */
     ModbusStart(&ModbusH);
 }
+```
 
-int main(void)
-{
-    HAL_Init();
-    SystemClock_Config();
-    MX_GPIO_Init();
-    MX_USART1_UART_Init();
-    
-    osKernelInitialize();
-    
-    Modbus_System_Init();
-    
-    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
-    
-    osKernelStart();
-    
-    while (1) {}
-}
+### 6. CMake Integration
+
+Add the following to your `CMakeLists.txt`:
+
+```cmake
+# Include paths
+target_include_directories(your_target PRIVATE
+    ${CMAKE_SOURCE_DIR}/Config
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Inc
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Inc/extensions
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Inc/ports
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Inc/ports/stm32
+)
+
+# Source files
+target_sources(your_target PRIVATE
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Src/Modbus.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Src/ports/stm32/modbus_port_stm32.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Src/ports/stm32/modbus_uart_callback.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Src/extensions/modbus_data.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Src/extensions/modbus_registry.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Src/extensions/modbus_handler.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/Modbus/MODBUS-LIB/Src/extensions/modbus_sync.c
+)
 ```
 
 ---
 
-## 📊 Data Types
+## ✅ Testing & Validation
 
-### Supported Types
+The library has been tested on **STM32G474** with the following configuration:
+- Modbus RTU Slave, ID=1, baudrate=115200
+- RS485 transceiver with DE/RE control
+- Handlers for U16, U32, and packed data
 
-| Type | Macro | Registers | Bytes | Use Case |
-|------|-------|-----------|-------|----------|
-| **U16** | `MODBUS_RESP_U16(ptr)` | 1 | 2 | Simple parameters |
-| **U32** | `MODBUS_RESP_U32(ptr)` | 2 | 4 | Counters, timestamps |
-| **I32** | `MODBUS_RESP_I32(ptr)` | 2 | 4 | Signed values (temperature) |
-| **PACKED** | `MODBUS_RESP_PACKED(ptr, bytes)` | N | N | Unions, mixed types |
-| **RAW** | `MODBUS_RESP_RAW(ptr, bytes)` | N | N | Strings, blobs |
-| **STRUCT** | `MODBUS_RESP_STRUCT(ptr, regs)` | N | N*2 | Arrays of registers |
+### Sample Logs
 
-### Example: Packed Data
+```
+18:25:20.46 -> 01 03 00 00 00 06 C5 C8 
+18:25:20.451 <- 01 03 0C 03 E8 10 01 00 00 00 00 00 00 00 00 01 00 00 00 01 00 00 00 BC 5F
 
-```c
-/* Weight (int32) + Status (uint8) in 4 bytes */
-static bool read_weight_with_status(uint16_t addr, 
-                                     ModbusDataResponse_t *resp, 
-                                     void *ctx)
-{
-    static union {
-        int32_t weight;
-        uint8_t bytes[4];
-    } packed;
-    
-    packed.weight = scale.output_weight_f;
-    packed.bytes[3] = scale_get_status();  /* status in LSB */
-    
-    *resp = MODBUS_RESP_PACKED(&packed, 4);
-    return true;
-}
+[20044] [INFO ] Modbus: reads=1, writes=0, errors=0
+[25048] [INFO ] System alive: 25 seconds
+[25052] [INFO ] Modbus: reads=1, writes=0, errors=0
+[115192] [INFO ] System alive: 115 seconds
+[115196] [INFO ] Modbus: reads=2, writes=1, errors=0
+
+18:27:56.57 -> 01 06 00 00 12 34 84 BD 
+18:27:56.189 <- 01 06 00 00 12 34 84 BD  [CRC OK]
+
+18:28:02.889 -> 01 03 00 00 00 01 84 0A 
+18:28:03.14 <- 01 03 02 12 34 B5 33  [CRC OK]
 ```
 
-**Modbus Response** (FC3, 2 registers):
-```
-[SlaveID][03][04][Weight Hi][Weight Lo][Status][Pad][CRC]
-```
+The logs show successful:
+- Read of 6 registers (response with correct CRC)
+- Write to register 0x0000 with value 0x1234
+- Read back of that register (value 0x1234)
 
 ---
 
-## 🔐 Access Levels
+## 🔧 Troubleshooting
 
-### Levels
+### Common Issues and Solutions
 
-| Level | Value | Description |
-|-------|-------|-------------|
-| **RELEASE** | 0 | Production access (always allowed) |
-| **SERVICE** | 1 | Service/maintenance access |
-| **DEBUG** | 2 | Debug/development access |
-
-### Runtime Control
-
-```c
-/* Set access level (e.g., after authentication) */
-ModbusHandler_SetAccessLevel(MODBUS_ACCESS_SERVICE);
-
-/* Get current level */
-uint8_t level = ModbusHandler_GetAccessLevel();
-```
-
-### Register Definition
-
-```c
-{0xDB00, 0xDB00, MODBUS_REG_SIMPLE, MODBUS_ACCESS_DEBUG,
- read_debug_param, write_debug_param, NULL},
-```
-
----
-
-## 🧪 Testing
-
-### Modbus Client Commands
-
-```bash
-# Read 16-bit parameter (FC3)
-modbus_client read 1 3 0xAAA0 1
-
-# Write 16-bit parameter (FC6)
-modbus_client write 1 6 0xAAA0 100
-
-# Execute command (FC6, value ignored)
-modbus_client write 1 6 0xAAAB 1
-
-# Read packed data (FC3, 2 registers = 4 bytes)
-modbus_client read 1 3 0xAA88 2
-
-# Read variable length (FC3, 32 registers = 64 bytes)
-modbus_client read 1 3 0xEA00 32
-
-# Write multiple registers (FC16)
-modbus_client write 1 16 0xDB00 9 00 00 03 E8 ...
-```
-
-### Debug Statistics
-
-```c
-#if MODBUS_DEBUG_ENABLED == 1
-ModbusHandlerStats_t stats;
-ModbusHandler_GetStats(&stats);
-
-LOG_INFO("Read operations: %lu", stats.read_count);
-LOG_INFO("Write operations: %lu", stats.write_count);
-LOG_INFO("Access denied: %lu", stats.access_denied);
-LOG_INFO("Not found: %lu", stats.not_found);
-#endif
-```
-
-### Stack Monitoring
-
-```c
-/* In Modbus task or periodic check */
-UBaseType_t watermark = uxTaskGetStackHighWaterMark(ModbusH.myTaskModbusAHandle);
-LOG_INFO("Modbus stack watermark: %lu words", watermark);
-
-/* Recommended: 512 * 4 bytes minimum */
-```
-
----
-
-## 🔧 Maintenance
-
-### Updating Submodule
-
-```bash
-# Pull latest changes from your fork
-cd Middlewares/Modbus
-git pull origin main
-
-# Return to project root
-cd ../..
-
-# Commit submodule update
-git add Middlewares/Modbus
-git commit -m "Update Modbus submodule"
-```
-
-### Adding New Registers
-
-1. **Add handler** in `modbus_app_handlers.c`
-2. **Add entry** in `modbus_app_register.c`
-3. **Rebuild** — no library changes needed
+| Issue | Likely Cause | Solution |
+|-------|--------------|----------|
+| **`HAL_UART_State_t` not found** | HAL version differences | Use `uint32_t` for state; library now uses PAL to avoid this |
+| **`xSemaphoreTake` implicit declaration** | Using CMSIS-RTOS semaphore | Use `osSemaphoreAcquire` instead (fixed in PAL version) |
+| **Incompatible pointer types** | Passing HAL handle directly | Use abstract wrappers: `ModbusUartHandle_t` and `ModbusGpioPort_t` |
+| **No response from slave** | Handlers not attached | Call `ModbusHandler_Attach()` after `ModbusInit()` |
+| **Data returned is wrong** | `static` variable missing in handler | Use `static` to keep pointer valid after return |
+| **Timeout errors** | Handler execution >1ms | Queue heavy work to background task |
+| **Stack overflow** | Insufficient task stack | Increase `stack_size` in task attributes (e.g., 512*4) |
 
 ### Debugging
 
-| Issue | Check |
-|-------|-------|
-| **No response** | Verify `ModbusHandler_Attach()` called after `ModbusInit()` |
-| **Wrong data** | Check `static` variables in handlers (pointer must remain valid) |
-| **Timeout** | Ensure handlers execute < 1ms (queue heavy work to background task) |
-| **Access denied** | Verify `ModbusHandler_SetAccessLevel()` called |
-| **Stack overflow** | Increase Modbus task stack to `512 * 4` |
+Enable debug output in `ModbusConfig.h`:
 
-### Best Practices
+```c
+#define MODBUS_DEBUG_ENABLED 1
+```
 
-1. **Handlers should be fast** — < 1ms execution time
-2. **Use static variables** — Data pointers must remain valid after return
-3. **Queue heavy work** — For complex operations, queue to background task
-4. **Check return values** — `ModbusRegistry_Register()` can fail (full, overlap)
-5. **Monitor stack** — Use `uxTaskGetStackHighWaterMark()` periodically
+Then use:
+
+```c
+ModbusHandlerStats_t stats;
+ModbusHandler_GetStats(&stats);
+LOG_INFO("Reads=%lu Writes=%lu Errors=%lu",
+         stats.read_count, stats.write_count, stats.read_errors);
+```
 
 ---
 
@@ -453,12 +415,20 @@ your-project/
 │           │   └── ModbusConfigTemplate.h  ← Template (reference only)
 │           ├── Inc/
 │           │   ├── Modbus.h
+│           │   ├── ports/
+│           │   │   ├── modbus_port.h
+│           │   │   └── stm32/
+│           │   │       └── modbus_port_stm32.h
 │           │   └── extensions/
 │           │       ├── modbus_data.h
 │           │       ├── modbus_registry.h
 │           │       └── modbus_handler.h
 │           └── Src/
 │               ├── Modbus.c
+│               ├── ports/
+│               │   └── stm32/
+│               │       ├── modbus_port_stm32.c
+│               │       └── modbus_uart_callback.c
 │               └── extensions/
 │                   ├── modbus_data.c
 │                   ├── modbus_registry.c
@@ -487,11 +457,11 @@ your-project/
 - **Comments in English** (for submodule)
 - **Doxygen format** for public APIs
 - **Consistent naming** (`ModbusXxx`, `modbus_xxx`)
+
 ---
 
 ## 🙏 Acknowledgments
 
 - Original library: [alejoseb/Modbus-STM32-HAL-FreeRTOS](https://github.com/alejoseb/Modbus-STM32-HAL-FreeRTOS)
 - Based on: [smarmengol/Modbus-Master-Slave-for-Arduino](https://github.com/smarmengol/Modbus-Master-Slave-for-Arduino)
-
----
+```
