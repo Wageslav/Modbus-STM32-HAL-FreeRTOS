@@ -159,6 +159,7 @@
 
 #define MODBUS_PLATFORM_STM32       1
 #define MODBUS_PLATFORM_POSIX       0
+#define MODBUS_PLATFORM_ESP32       0
 #define MODBUS_USE_CMSIS_RTOS_V2    1
 
 /* ============================================================================

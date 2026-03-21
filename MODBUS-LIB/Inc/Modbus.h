@@ -38,6 +38,8 @@
 #include "queue.h"
 #include "timers.h"
 
+#include "ports/modbus_port.h"
+
 /* NOTE: Do NOT include main.h here - project must include it before this file */
 
 #ifdef __cplusplus
@@ -274,10 +276,10 @@ typedef struct
      * ========================================================================
      */
     mb_masterslave_t uModbusType;       /**< Master or Slave mode */
-    UART_HandleTypeDef *port;           /**< HAL UART handle (POINTER!) */
+    ModbusUartHandle_t *port;
     uint8_t u8id;                       /**< Slave ID (0=master, 1-247=slave) */
-    GPIO_TypeDef *EN_Port;              /**< RS485 direction control port (POINTER!) */
-    uint16_t EN_Pin;                    /**< RS485 direction control pin */
+    ModbusGpioPort_t *EN_Port;
+    ModbusGpioPin_t EN_Pin;
     mb_hardware_t xTypeHW;              /**< Hardware type */
     
     /* ========================================================================
