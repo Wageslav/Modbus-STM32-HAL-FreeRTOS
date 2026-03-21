@@ -15,6 +15,7 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
 /* ============================================================================
  * FORWARD DECLARATIONS (Platform-specific, defined in modbus_port.h)
  * ============================================================================
