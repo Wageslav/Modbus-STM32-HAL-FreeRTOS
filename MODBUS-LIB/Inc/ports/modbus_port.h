@@ -94,17 +94,6 @@ ModbusUartStatus_t ModbusPort_UartTransmit_IT(ModbusUartHandle_t *huart,
                                                uint8_t *pData, 
                                                uint16_t Size);
 
-/**
- * @brief Enable UART transmitter (for RS485 half-duplex)
- * @param huart Abstract UART handle
- */
-void ModbusPort_UartEnableTransmitter(ModbusUartHandle_t *huart);
-
-/**
- * @brief Enable UART receiver (for RS485 half-duplex)
- * @param huart Abstract UART handle
- */
-void ModbusPort_UartEnableReceiver(ModbusUartHandle_t *huart);
 
 /* ============================================================================
  * GPIO OPERATIONS (Required for RS485 direction control)

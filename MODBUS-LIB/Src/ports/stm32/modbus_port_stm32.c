@@ -30,7 +30,7 @@ ModbusUartState_t ModbusPort_UartGetState(ModbusUartHandle_t *huart)
         return MODBUS_UART_STATE_ERROR;
     }
     
-    HAL_UART_State_t hal_state = HAL_UART_GetState(huart->handle);
+    uint32_t hal_state = HAL_UART_GetState(huart->handle);
     
     /* Map HAL states to abstract states */
     switch (hal_state)
@@ -100,28 +100,6 @@ ModbusUartStatus_t ModbusPort_UartTransmit_IT(ModbusUartHandle_t *huart,
     HAL_StatusTypeDef status = HAL_UART_Transmit_IT(huart->handle, pData, Size);
     
     return (status == HAL_OK) ? MODBUS_UART_OK : MODBUS_UART_ERROR;
-}
-
-void ModbusPort_UartEnableTransmitter(ModbusUartHandle_t *huart)
-{
-    if (huart == NULL || huart->handle == NULL)
-    {
-        return;
-    }
-    
-    /* STM32-specific: Enable transmitter for half-duplex */
-    HAL_HalfDuplex_EnableTransmitter(huart->handle);
-}
-
-void ModbusPort_UartEnableReceiver(ModbusUartHandle_t *huart)
-{
-    if (huart == NULL || huart->handle == NULL)
-    {
-        return;
-    }
-    
-    /* STM32-specific: Enable receiver for half-duplex */
-    HAL_HalfDuplex_EnableReceiver(huart->handle);
 }
 
 /* ============================================================================
