@@ -1,8 +1,24 @@
 /*
  * Modbus.h
+ * Modbus RTU Master and Slave library for STM32 CUBE with FreeRTOS
  * 
- *  Created on: May 5, 2020
- *      Author: Alejandro Mera
+ * ============================================================================
+ * INTEGRATION REQUIREMENT (IMPORTANT!)
+ * ============================================================================
+ * 
+ * Project must include main.h BEFORE Modbus.h to provide HAL type definitions.
+ * 
+ * Example in main.c:
+ *   #include "main.h"      <- MUST be first (provides UART_HandleTypeDef, etc.)
+ *   #include "Modbus.h"    <- Then Modbus library
+ * 
+ * Reason: This library uses UART_HandleTypeDef and GPIO_TypeDef from STM32 HAL.
+ *         Forward declarations cause type conflicts with real HAL definitions.
+ * ============================================================================
+ * 
+ * Created on: May 5, 2020
+ * Author: Alejandro Mera
+ * Refactored for flexible handler support
  */
 
 #ifndef THIRD_PARTY_MODBUS_INC_MODBUS_H_
@@ -10,8 +26,8 @@
 
 /* ============================================================================
  * INCLUDES
- * ============================================================================ */
-
+ * ============================================================================
+ */
 #include "ModbusConfig.h"
 #include <inttypes.h>
 #include <stdbool.h>
@@ -22,19 +38,16 @@
 #include "queue.h"
 #include "timers.h"
 
+/* NOTE: Do NOT include main.h here - project must include it before this file */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ===== HAL TYPE FORWARD DECLARATIONS ===== */
-/* Avoid including main.h to keep library portable */
-typedef struct UART_HandleTypeDef UART_HandleTypeDef;
-typedef struct GPIO_TypeDef GPIO_TypeDef;
-
 /* ============================================================================
  * CONFIGURATION CHECKS
- * ============================================================================ */
-
+ * ============================================================================
+ */
 #ifndef MAX_BUFFER
 #define MAX_BUFFER 256
 #endif
@@ -49,7 +62,8 @@ typedef struct GPIO_TypeDef GPIO_TypeDef;
 
 /* ============================================================================
  * ENUMERATIONS
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /**
  * @brief Hardware type enumeration
@@ -82,8 +96,6 @@ typedef enum
 
 /**
  * @brief Modbus function codes
- * 
- * These are the implemented function codes for both Master and Slave.
  */
 typedef enum MB_FC
 {
@@ -122,7 +134,6 @@ typedef enum ERR_OP_LIST
     ERR_TIME_OUT = 17,              /**< Timeout error */
     ERR_BAD_SLAVE_ID = 18,          /**< Invalid slave ID */
     ERR_BAD_TCP_ID = 19,            /**< Invalid TCP connection ID */
-    
     /* Operations */
     OP_OK_QUERY = 20                /**< Query completed successfully */
 } mb_err_op_t;
@@ -154,7 +165,8 @@ typedef enum MESSAGE
 
 /* ============================================================================
  * TYPE DEFINITIONS
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /**
  * @brief Union for byte manipulation
@@ -179,8 +191,6 @@ typedef struct
 
 /**
  * @brief Master query structure
- * 
- * This structure contains all fields necessary to generate a Modbus query.
  */
 typedef struct
 {
@@ -199,69 +209,44 @@ typedef struct
 
 /* ============================================================================
  * FORWARD DECLARATIONS FOR FLEXIBLE DATA HANDLING
- * ============================================================================ */
-
-/**
- * @brief Forward declaration for data response structure
- * 
- * Defined in extensions/modbus_data.h when MODBUS_DATA_LAYER_ENABLED is set.
- * This allows the core library to reference the type without including the header.
+ * ============================================================================
  */
 struct ModbusDataResponse;
 typedef struct ModbusDataResponse ModbusDataResponse_t;
 
-/**
- * @brief Forward declaration for write request structure
- */
 struct ModbusWriteRequest;
 typedef struct ModbusWriteRequest ModbusWriteRequest_t;
 
 /* ============================================================================
  * APPLICATION HOOK TYPES (FLEXIBLE DATA ACCESS)
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /**
  * @brief Read hook function type for flexible register access
- * 
- * This hook is called when a read request (FC3/FC4) is received.
- * The handler should fill the response structure with data to be sent.
- * 
  * @param address Register address being read
  * @param response Pointer to response structure to fill
- * @return true if successful, false if address not found or error
- * 
- * @note This enables project-specific data handling without modifying the library.
- * @note The response data must remain valid until after the function returns.
+ * @return true if successful, false if error
  */
 typedef bool (*ModbusReadFlexHook_t)(uint16_t address, ModbusDataResponse_t *response);
 
 /**
  * @brief Write hook function type for flexible register access
- * 
- * This hook is called when a write request (FC6/FC16) is received.
- * The handler should process the incoming data and return success/failure.
- * 
  * @param address Register address being written
  * @param request Pointer to request structure containing data
- * @return true if successful, false if error (will send exception response)
- * 
- * @note This enables commands, validation, and project-specific logic.
- * @note Keep execution time under 1ms to avoid Modbus timeout.
+ * @return true if successful, false if error
  */
 typedef bool (*ModbusWriteFlexHook_t)(uint16_t address, const ModbusWriteRequest_t *request);
 
 /* ============================================================================
  * TCP CONNECTION STRUCTURE
- * ============================================================================ */
-
-#if ENABLE_TCP == 1
-/**
- * @brief TCP client connection structure
+ * ============================================================================
  */
+#if ENABLE_TCP == 1
 typedef struct
 {
     struct netconn *conn;       /**< Network connection handle */
-    uint32_t aging;             /**< Connection age counter for cleanup */
+    uint32_t aging;             /**< Connection age counter */
 } tcpclients_t;
 
 #ifndef NUMBERTCPCONN
@@ -275,29 +260,30 @@ typedef struct
 
 /* ============================================================================
  * MODBUS HANDLER STRUCTURE
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /**
  * @brief Modbus handler structure
- * 
  * Contains all variables required for Modbus daemon operation.
- * Each instance represents one Modbus channel (UART, TCP, USB-CDC, etc.).
  */
 typedef struct
 {
     /* ========================================================================
      * BASIC CONFIGURATION
-     * ======================================================================== */
+     * ========================================================================
+     */
     mb_masterslave_t uModbusType;       /**< Master or Slave mode */
-    UART_HandleTypeDef *port;           /**< HAL UART handle */
+    UART_HandleTypeDef *port;           /**< HAL UART handle (POINTER!) */
     uint8_t u8id;                       /**< Slave ID (0=master, 1-247=slave) */
-    GPIO_TypeDef *EN_Port;              /**< RS485 direction control port */
+    GPIO_TypeDef *EN_Port;              /**< RS485 direction control port (POINTER!) */
     uint16_t EN_Pin;                    /**< RS485 direction control pin */
-    mb_hardware_t xTypeHW;              /**< Hardware type (USART, TCP, etc.) */
+    mb_hardware_t xTypeHW;              /**< Hardware type */
     
     /* ========================================================================
      * DATA BUFFERS
-     * ======================================================================== */
+     * ========================================================================
+     */
     uint8_t u8Buffer[MAX_BUFFER];       /**< Modbus communication buffer */
     uint8_t u8BufferSize;               /**< Current buffer size */
     uint8_t u8lastRec;                  /**< Last received byte index */
@@ -307,7 +293,8 @@ typedef struct
     
     /* ========================================================================
      * COMMUNICATION STATE
-     * ======================================================================== */
+     * ========================================================================
+     */
     mb_err_op_t i8lastError;            /**< Last error code */
     int8_t i8state;                     /**< Current communication state */
     mb_address_t u8AddressMode;         /**< Broadcast or normal mode */
@@ -318,19 +305,21 @@ typedef struct
     
     /* ========================================================================
      * TCP SPECIFIC FIELDS
-     * ======================================================================== */
+     * ========================================================================
+     */
 #if ENABLE_TCP == 1
     tcpclients_t newconns[NUMBERTCPCONN];   /**< TCP connection pool */
     struct netconn *conn;                   /**< Server connection handle */
     uint32_t xIpAddress;                    /**< Client IP address */
     uint16_t u16TransactionID;              /**< MBAP transaction ID */
-    uint16_t uTcpPort;                      /**< TCP port (default 502) */
+    uint16_t uTcpPort;                      /**< TCP port */
     uint8_t newconnIndex;                   /**< Current connection index */
 #endif
     
     /* ========================================================================
      * FREERTOS COMPONENTS
-     * ======================================================================== */
+     * ========================================================================
+     */
     osMessageQueueId_t QueueTelegramHandle; /**< Queue for master telegrams */
     osThreadId_t myTaskModbusAHandle;       /**< Modbus task handle */
     TimerHandle_t xTimerT35;                /**< T3.5 timing timer */
@@ -339,61 +328,25 @@ typedef struct
     modbusRingBuffer_t xBufferRX;           /**< USART RX ring buffer */
     
     /* ========================================================================
-     * APPLICATION INTEGRATION HOOKS (NEW - FLEXIBLE DATA ACCESS)
-     * ======================================================================== */
-    
-    /**
-     * @brief Flexible read hook
-     * 
-     * Called for FC3/FC4 read requests. If NULL, falls back to u16regs array.
-     * Enables project-specific data handling without modifying library core.
+     * APPLICATION INTEGRATION HOOKS (FLEXIBLE DATA ACCESS)
+     * ========================================================================
      */
-    ModbusReadFlexHook_t onReadFlex;
-    
-    /**
-     * @brief Flexible write hook
-     * 
-     * Called for FC6/FC16 write requests. If NULL, falls back to u16regs array.
-     * Enables commands, validation, and custom logic.
-     */
-    ModbusWriteFlexHook_t onWriteFlex;
-    
-    /**
-     * @brief Application context pointer
-     * 
-     * Opaque pointer passed to hooks for project-specific data.
-     * Can be used to access configuration, state, or other context.
-     */
-    void *appContext;
+    ModbusReadFlexHook_t onReadFlex;        /**< Flexible read hook */
+    ModbusWriteFlexHook_t onWriteFlex;      /**< Flexible write hook */
+    void *appContext;                       /**< Application context pointer */
     
     /* ========================================================================
-     * LEGACY SUPPORT HOOKS (OPTIONAL - BACKWARD COMPATIBILITY)
-     * ======================================================================== */
-    
-    /**
-     * @brief Simple read hook (16-bit only)
-     * 
-     * Legacy interface for simple register reads.
-     * Returns 16-bit value directly.
+     * LEGACY SUPPORT HOOKS (OPTIONAL)
+     * ========================================================================
      */
-    uint16_t (*onReadSimple)(uint16_t addr);
-    
-    /**
-     * @brief Simple write hook (16-bit only)
-     * 
-     * Legacy interface for simple register writes.
-     * Returns success/failure status.
-     */
-    bool (*onWriteSimple)(uint16_t addr, uint16_t value);
+    uint16_t (*onReadSimple)(uint16_t addr);            /**< Simple read hook */
+    bool (*onWriteSimple)(uint16_t addr, uint16_t value); /**< Simple write hook */
     
 } modbusHandler_t;
 
 /* ============================================================================
  * CONSTANTS
- * ============================================================================ */
-
-/**
- * @brief Response frame sizes
+ * ============================================================================
  */
 typedef enum
 {
@@ -404,237 +357,68 @@ typedef enum
 
 /* ============================================================================
  * GLOBAL VARIABLES
- * ============================================================================ */
-
-/**
- * @brief Array of active Modbus handlers
- * 
- * Supports multiple concurrent Modbus instances (limited by MAX_M_HANDLERS).
+ * ============================================================================
  */
 extern modbusHandler_t *mHandlers[MAX_M_HANDLERS];
-
-/**
- * @brief Number of registered handlers
- */
 extern uint8_t numberHandlers;
 
 /* ============================================================================
  * PUBLIC API - INITIALIZATION
- * ============================================================================ */
-
-/**
- * @brief Initialize Modbus handler
- * 
- * Creates FreeRTOS task, timers, semaphore, and ring buffer.
- * Must be called before ModbusStart().
- * 
- * @param modH Pointer to modbusHandler_t structure
- * 
- * @note This function will halt on error (while(1) loops).
- * @note Ensure heap is large enough for FreeRTOS objects.
+ * ============================================================================
  */
 void ModbusInit(modbusHandler_t *modH);
-
-/**
- * @brief Start Modbus communication
- * 
- * Enables UART interrupts and initializes state machine.
- * Must be called after ModbusInit() and after UART is configured.
- * 
- * @param modH Pointer to modbusHandler_t structure
- */
 void ModbusStart(modbusHandler_t *modH);
-
 #if ENABLE_USB_CDC == 1
-/**
- * @brief Start Modbus over USB-CDC
- * 
- * Alternative start function for USB-CDC hardware.
- * 
- * @param modH Pointer to modbusHandler_t structure
- */
 void ModbusStartCDC(modbusHandler_t *modH);
 #endif
 
 /* ============================================================================
  * PUBLIC API - MASTER OPERATIONS
- * ============================================================================ */
-
-/**
- * @brief Send query to queue (non-blocking)
- * 
- * Adds telegram to master queue for asynchronous transmission.
- * 
- * @param modH Pointer to modbusHandler_t structure
- * @param telegram Modbus telegram structure
+ * ============================================================================
  */
 void ModbusQuery(modbusHandler_t *modH, modbus_t telegram);
-
-/**
- * @brief Send query and wait for response (blocking)
- * 
- * Adds telegram to queue and waits for notification.
- * Returns operation result via task notification.
- * 
- * @param modH Pointer to modbusHandler_t structure
- * @param telegram Modbus telegram structure
- * @return Operation result (OP_OK_QUERY or error code)
- */
 uint32_t ModbusQueryV2(modbusHandler_t *modH, modbus_t telegram);
-
-/**
- * @brief Inject query at queue head (high priority)
- * 
- * Places telegram at front of queue for immediate transmission.
- * 
- * @param modH Pointer to modbusHandler_t structure
- * @param telegram Modbus telegram structure
- */
 void ModbusQueryInject(modbusHandler_t *modH, modbus_t telegram);
 
 /* ============================================================================
  * PUBLIC API - TIMING
- * ============================================================================ */
-
-/**
- * @brief Set communication timeout
- * 
- * @param u16timeOut Timeout value in milliseconds
+ * ============================================================================
  */
 void setTimeOut(uint16_t u16timeOut);
-
-/**
- * @brief Get current timeout value
- * 
- * @return Timeout value in milliseconds
- */
 uint16_t getTimeOut(void);
-
-/**
- * @brief Get timeout timer state
- * 
- * @return true if timer is running, false otherwise
- */
 bool getTimeOutState(void);
 
 /* ============================================================================
  * PUBLIC API - TASKS
- * ============================================================================ */
-
-/**
- * @brief Modbus slave task entry point
- * 
- * Main loop for slave operation. Created by ModbusInit().
- * 
- * @param argument Pointer to modbusHandler_t structure
+ * ============================================================================
  */
 void StartTaskModbusSlave(void *argument);
-
-/**
- * @brief Modbus master task entry point
- * 
- * Main loop for master operation. Created by ModbusInit().
- * 
- * @param argument Pointer to modbusHandler_t structure
- */
 void StartTaskModbusMaster(void *argument);
 
 /* ============================================================================
  * PUBLIC API - UTILITIES
- * ============================================================================ */
-
-/**
- * @brief Calculate CRC-16 for Modbus
- * 
- * @param Buffer Pointer to data buffer
- * @param u8length Number of bytes to process
- * @return Calculated CRC value
+ * ============================================================================
  */
 uint16_t calcCRC(uint8_t *Buffer, uint8_t u8length);
 
 /* ============================================================================
  * PUBLIC API - TCP (IF ENABLED)
- * ============================================================================ */
-
+ * ============================================================================
+ */
 #if ENABLE_TCP == 1
-/**
- * @brief Close TCP connection
- * 
- * @param conn Network connection handle
- */
 void ModbusCloseConn(struct netconn *conn);
-
-/**
- * @brief Close TCP connection and clean handler
- * 
- * @param modH Pointer to modbusHandler_t structure
- */
 void ModbusCloseConnNull(modbusHandler_t *modH);
 #endif
 
 /* ============================================================================
  * PUBLIC API - RING BUFFER
- * ============================================================================ */
-
-/**
- * @brief Add byte to ring buffer
- * 
- * @param xRingBuffer Pointer to ring buffer structure
- * @param u8Val Byte value to add
+ * ============================================================================
  */
 void RingAdd(modbusRingBuffer_t *xRingBuffer, uint8_t u8Val);
-
-/**
- * @brief Get all available bytes from ring buffer
- * 
- * @param xRingBuffer Pointer to ring buffer structure
- * @param buffer Output buffer
- * @return Number of bytes read
- */
 uint8_t RingGetAllBytes(modbusRingBuffer_t *xRingBuffer, uint8_t *buffer);
-
-/**
- * @brief Get N bytes from ring buffer
- * 
- * @param xRingBuffer Pointer to ring buffer structure
- * @param buffer Output buffer
- * @param uNumber Number of bytes to read
- * @return Number of bytes actually read
- */
 uint8_t RingGetNBytes(modbusRingBuffer_t *xRingBuffer, uint8_t *buffer, uint8_t uNumber);
-
-/**
- * @brief Get count of available bytes
- * 
- * @param xRingBuffer Pointer to ring buffer structure
- * @return Number of available bytes
- */
 uint8_t RingCountBytes(modbusRingBuffer_t *xRingBuffer);
-
-/**
- * @brief Clear ring buffer
- * 
- * @param xRingBuffer Pointer to ring buffer structure
- */
 void RingClear(modbusRingBuffer_t *xRingBuffer);
-
-/* ============================================================================
- * DEPRECATED/UNIMPLEMENTED FUNCTIONS
- * ============================================================================ */
-
-/*
- * The following functions are declared in the original library but not implemented:
- * 
- * uint16_t getInCnt();          // Number of incoming messages
- * uint16_t getOutCnt();         // Number of outcoming messages
- * uint16_t getErrCnt();         // Error counter
- * uint8_t getID();              // Get slave ID
- * uint8_t getState();           // Get communication state
- * uint8_t getLastError();       // Get last error code
- * void setID(uint8_t u8id);     // Set slave ID
- * void setTxendPinOverTime(uint32_t u32overTime);
- * void ModbusEnd();             // Release serial port
- */
 
 #ifdef __cplusplus
 }
