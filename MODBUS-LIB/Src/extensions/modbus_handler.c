@@ -132,7 +132,7 @@ static bool ModbusHandler_ReadHook(uint16_t address, ModbusDataResponse_t *respo
     }
     
     /* Initialize response as invalid */
-    *response = MODBUS_RESP_INVALID;
+    ModbusResp_SetInvalid(response);
     
     /* Lookup address in registry */
     const ModbusRegDescriptor_t *desc = ModbusRegistry_Lookup(address);

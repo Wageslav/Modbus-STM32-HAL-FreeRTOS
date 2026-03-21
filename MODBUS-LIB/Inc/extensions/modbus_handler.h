@@ -27,7 +27,9 @@
 
 /* Forward declaration - library structure */
 struct modbusHandler_t;
-typedef struct modbusHandler_t modbusHandler_t;
+typedef struct modbusHandler {
+    ...
+} modbusHandler_t;
 
 #ifdef __cplusplus
 extern "C" {

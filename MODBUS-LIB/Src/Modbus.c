@@ -1323,7 +1323,7 @@ uint8_t validateRequest(modbusHandler_t *modH)
 
 uint16_t word(uint8_t H, uint8_t L)
 {
-    bytesFields W;
+    bytesFields_t W;
     W.u8[0] = L;
     W.u8[1] = H;
     return W.u16[0];

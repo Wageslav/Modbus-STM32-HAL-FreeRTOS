@@ -151,8 +151,10 @@ typedef struct ModbusWriteRequest
 /**
  * @brief Create invalid response (error/not found)
  */
-#define MODBUS_RESP_INVALID \
-    { .is_valid = false }
+static inline void ModbusResp_SetInvalid(ModbusDataResponse_t *resp)
+{
+    if (resp) resp->is_valid = false;
+}
 
 /* ============================================================================
  * SERIALIZATION FUNCTIONS (READ OPERATIONS)

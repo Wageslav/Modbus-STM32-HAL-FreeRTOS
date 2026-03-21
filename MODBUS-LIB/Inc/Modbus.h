@@ -26,6 +26,11 @@
 extern "C" {
 #endif
 
+/* ===== HAL TYPE FORWARD DECLARATIONS ===== */
+/* Avoid including main.h to keep library portable */
+typedef struct UART_HandleTypeDef UART_HandleTypeDef;
+typedef struct GPIO_TypeDef GPIO_TypeDef;
+
 /* ============================================================================
  * CONFIGURATION CHECKS
  * ============================================================================ */

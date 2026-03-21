@@ -211,6 +211,11 @@
  */
 #define MODBUS_DEFAULT_TIMEOUT_MS   1000
 
+/* ===== TIMING CONSTANTS ===== */
+#ifndef TIMEOUT_MODBUS
+#define TIMEOUT_MODBUS  MODBUS_DEFAULT_TIMEOUT_MS /* Default timeout: 1000 ms */
+#endif
+
 /**
  * @brief Mutex timeout for register access (milliseconds)
  * 
