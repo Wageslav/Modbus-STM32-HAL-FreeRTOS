@@ -256,6 +256,8 @@ size_t ModbusRegistry_GetCount(void);
  */
 size_t ModbusRegistry_GetMaxCount(void);
 
+uint16_t ModbusRegistry_GetMaxAddress(void);
+
 /* ============================================================================
  * END OF HEADER
  * ============================================================================ */

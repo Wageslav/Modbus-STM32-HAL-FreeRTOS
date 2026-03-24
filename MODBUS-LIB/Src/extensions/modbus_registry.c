@@ -204,6 +204,19 @@ size_t ModbusRegistry_GetMaxCount(void)
     return MAX_REGISTRY_ENTRIES;
 }
 
+uint16_t ModbusRegistry_GetMaxAddress(void)
+{
+    uint16_t max = 0;
+    for (size_t i = 0; i < g_registry_count; i++)
+    {
+        if (g_registry[i].address_end > max)
+        {
+            max = g_registry[i].address_end;
+        }
+    }
+    return max;
+}
+
 /* ============================================================================
  * END OF FILE
  * ============================================================================ */
