@@ -1097,11 +1097,14 @@ int8_t process_FC3(modbusHandler_t *modH) {
                                                        modH->u8BufferSize);
         if (written > 0) {
           modH->u8BufferSize += written;
+          // Пропускаем остальные регистры этого блока
+          i += (resp.reg_count - 1);
           continue;
         }
       }
     }
 #endif
+    // fallback ...
     if (modH->onReadSimple != NULL)
       value = modH->onReadSimple(i);
     else if (modH->u16regs != NULL)
@@ -1110,6 +1113,7 @@ int8_t process_FC3(modbusHandler_t *modH) {
     modH->u8Buffer[modH->u8BufferSize++] = highByte(value);
     modH->u8Buffer[modH->u8BufferSize++] = lowByte(value);
   }
+
   uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
   sendTxBuffer(modH);
   return u8CopyBufferSize;
