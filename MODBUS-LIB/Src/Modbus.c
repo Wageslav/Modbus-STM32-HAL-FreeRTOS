@@ -242,51 +242,53 @@ void ModbusInit(modbusHandler_t *modH) {
       ;
 }
 
-void ModbusStart(modbusHandler_t *modH) {
-  if (modH->xTypeHW != USART_HW && modH->xTypeHW != TCP_HW &&
-      modH->xTypeHW != USB_CDC_HW && modH->xTypeHW != USART_HW_DMA)
-    while (1)
-      ;
+void ModbusStart(modbusHandler_t *modH)
+{
+    if (modH->xTypeHW != USART_HW && modH->xTypeHW != TCP_HW &&
+        modH->xTypeHW != USB_CDC_HW && modH->xTypeHW != USART_HW_DMA)
+        while (1)
+            ;
 
-  if (modH->xTypeHW == USART_HW_DMA && ENABLE_USART_DMA == 0)
-    while (1)
-      ;
+    if (modH->xTypeHW == USART_HW_DMA && ENABLE_USART_DMA == 0)
+        while (1)
+            ;
 
-  if (modH->xTypeHW == USART_HW || modH->xTypeHW == USART_HW_DMA) {
-    if (modH->EN_Port != NULL)
-      ModbusPort_GpioWrite(modH->EN_Port, modH->EN_Pin, MODBUS_GPIO_RESET);
+    if (modH->xTypeHW == USART_HW || modH->xTypeHW == USART_HW_DMA)
+    {
+        if (modH->EN_Port != NULL)
+            ModbusPort_GpioWrite(modH->EN_Port, modH->EN_Pin, MODBUS_GPIO_RESET);
 
-    /* Allow u16regs == NULL if dynamic handlers are used */
-    if (modH->uModbusType == MB_SLAVE && modH->u16regs == NULL && !modH->dynamic_handlers)
-      while (1)
-        ;
+        /* Разрешить u16regs == NULL, если используются динамические обработчики */
+        if (modH->uModbusType == MB_SLAVE && modH->u16regs == NULL && !modH->dynamic_handlers)
+            while (1)
+                ;
 
-    while (ModbusPort_UartGetState(modH->port) != MODBUS_UART_STATE_READY)
-      ;
+        while (ModbusPort_UartGetState(modH->port) != MODBUS_UART_STATE_READY)
+            ;
 
 #if ENABLE_USART_DMA == 1
-    if (modH->xTypeHW == USART_HW_DMA) {
-      /* DMA implementation - platform specific */
-      /* Placeholder - implement in port layer if needed */
-    } else
+        if (modH->xTypeHW == USART_HW_DMA)
+        {
+            /* DMA implementation - platform specific */
+        }
+        else
 #endif
-    {
-      if (ModbusPort_UartReceive_IT(modH->port, &modH->dataRX, 1) !=
-          MODBUS_UART_OK)
-        while (1)
-          ;
+        {
+            if (ModbusPort_UartReceive_IT(modH->port, &modH->dataRX, 1) != MODBUS_UART_OK)
+                while (1)
+                    ;
+        }
+
+        if (modH->u8id != 0 && modH->uModbusType == MB_MASTER)
+            while (1)
+                ;
+        if (modH->u8id == 0 && modH->uModbusType == MB_SLAVE)
+            while (1)
+                ;
     }
 
-    if (modH->u8id != 0 && modH->uModbusType == MB_MASTER)
-      while (1)
-        ;
-    if (modH->u8id == 0 && modH->uModbusType == MB_SLAVE)
-      while (1)
-        ;
-  }
-
-  modH->u8lastRec = modH->u8BufferSize = 0;
-  modH->u16InCnt = modH->u16OutCnt = modH->u16errCnt = 0;
+    modH->u8lastRec = modH->u8BufferSize = 0;
+    modH->u16InCnt = modH->u16OutCnt = modH->u16errCnt = 0;
 }
 
 #if ENABLE_USB_CDC == 1
@@ -492,108 +494,122 @@ static mb_err_op_t TCPgetRxBuffer(modbusHandler_t *modH) {
  * MODBUS SLAVE TASK
  * ============================================================================
  */
-void StartTaskModbusSlave(void *argument) {
-  modbusHandler_t *modH = (modbusHandler_t *)argument;
+void StartTaskModbusSlave(void *argument)
+{
+    modbusHandler_t *modH = (modbusHandler_t *)argument;
 
 #if ENABLE_TCP == 1
-  if (modH->xTypeHW == TCP_HW)
-    TCPinitserver(modH);
+    if (modH->xTypeHW == TCP_HW)
+        TCPinitserver(modH);
 #endif
 
-  for (;;) {
-    modH->i8lastError = 0;
+    for (;;)
+    {
+        modH->i8lastError = 0;
 
 #if ENABLE_USB_CDC == 1
-    if (modH->xTypeHW == USB_CDC_HW) {
-      ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-      if (modH->u8BufferSize == ERR_BUFF_OVERFLOW) {
-        modH->i8lastError = ERR_BUFF_OVERFLOW;
-        modH->u16errCnt++;
-        continue;
-      }
-    }
+        if (modH->xTypeHW == USB_CDC_HW)
+        {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            if (modH->u8BufferSize == ERR_BUFF_OVERFLOW)
+            {
+                modH->i8lastError = ERR_BUFF_OVERFLOW;
+                modH->u16errCnt++;
+                continue;
+            }
+        }
 #endif
 
 #if ENABLE_TCP == 1
-    if (modH->xTypeHW == TCP_HW) {
-      if (TCPwaitConnData(modH) == false)
-        continue;
-    }
+        if (modH->xTypeHW == TCP_HW)
+        {
+            if (TCPwaitConnData(modH) == false)
+                continue;
+        }
 #endif
 
-    if (modH->xTypeHW == USART_HW || modH->xTypeHW == USART_HW_DMA) {
-      ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-      if (getRxBuffer(modH) == ERR_BUFF_OVERFLOW) {
-        modH->i8lastError = ERR_BUFF_OVERFLOW;
-        modH->u16errCnt++;
-        continue;
-      }
-    }
+        if (modH->xTypeHW == USART_HW || modH->xTypeHW == USART_HW_DMA)
+        {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            if (getRxBuffer(modH) == ERR_BUFF_OVERFLOW)
+            {
+                modH->i8lastError = ERR_BUFF_OVERFLOW;
+                modH->u16errCnt++;
+                continue;
+            }
+        }
 
-    if (modH->u8BufferSize < 7) {
-      modH->i8lastError = ERR_BAD_SIZE;
-      modH->u16errCnt++;
-      continue;
-    }
+        if (modH->u8BufferSize < 7)
+        {
+            modH->i8lastError = ERR_BAD_SIZE;
+            modH->u16errCnt++;
+            continue;
+        }
 
-    modH->u8AddressMode = ADDRESS_NORMAL;
-    if (modH->u8Buffer[ID] == ADDRESS_BROADCAST)
-      modH->u8AddressMode = ADDRESS_BROADCAST;
+        modH->u8AddressMode = ADDRESS_NORMAL;
+        if (modH->u8Buffer[ID] == ADDRESS_BROADCAST)
+            modH->u8AddressMode = ADDRESS_BROADCAST;
 
-    if (modH->u8Buffer[ID] != modH->u8id &&
-        modH->u8AddressMode != ADDRESS_BROADCAST) {
+        if (modH->u8Buffer[ID] != modH->u8id &&
+            modH->u8AddressMode != ADDRESS_BROADCAST)
+        {
 #if ENABLE_TCP == 0
-      continue;
+            continue;
 #else
-      if (modH->xTypeHW != TCP_HW)
-        continue;
+            if (modH->xTypeHW != TCP_HW)
+                continue;
 #endif
+        }
+
+        uint8_t u8exception = validateRequest(modH);
+        if (u8exception > 0)
+        {
+            /* Do not send a response if ERR_SILENT or broadcast address */
+            if (u8exception != ERR_TIME_OUT && u8exception != ERR_SILENT &&
+                modH->u8AddressMode != ADDRESS_BROADCAST)
+            {
+                buildException(u8exception, modH);
+                sendTxBuffer(modH);
+            }
+            modH->i8lastError = u8exception;
+            continue;
+        }
+
+        modH->i8lastError = 0;
+        osSemaphoreAcquire(modH->ModBusSphrHandle, osWaitForever);
+
+        switch (modH->u8Buffer[FUNC])
+        {
+        case MB_FC_READ_COILS:
+        case MB_FC_READ_DISCRETE_INPUT:
+            if (modH->u8AddressMode == ADDRESS_BROADCAST)
+                break;
+            modH->i8state = process_FC1(modH);
+            break;
+        case MB_FC_READ_INPUT_REGISTER:
+        case MB_FC_READ_REGISTERS:
+            if (modH->u8AddressMode == ADDRESS_BROADCAST)
+                break;
+            modH->i8state = process_FC3(modH);
+            break;
+        case MB_FC_WRITE_COIL:
+            modH->i8state = process_FC5(modH);
+            break;
+        case MB_FC_WRITE_REGISTER:
+            modH->i8state = process_FC6(modH);
+            break;
+        case MB_FC_WRITE_MULTIPLE_COILS:
+            modH->i8state = process_FC15(modH);
+            break;
+        case MB_FC_WRITE_MULTIPLE_REGISTERS:
+            modH->i8state = process_FC16(modH);
+            break;
+        default:
+            break;
+        }
+
+        osSemaphoreRelease(modH->ModBusSphrHandle);
     }
-
-    uint8_t u8exception = validateRequest(modH);
-    if (u8exception > 0) {
-      if (u8exception != ERR_TIME_OUT) {
-        buildException(u8exception, modH);
-        sendTxBuffer(modH);
-      }
-      modH->i8lastError = u8exception;
-      continue;
-    }
-
-    modH->i8lastError = 0;
-    osSemaphoreAcquire(modH->ModBusSphrHandle, osWaitForever);
-
-    switch (modH->u8Buffer[FUNC]) {
-    case MB_FC_READ_COILS:
-    case MB_FC_READ_DISCRETE_INPUT:
-      if (modH->u8AddressMode == ADDRESS_BROADCAST)
-        break;
-      modH->i8state = process_FC1(modH);
-      break;
-    case MB_FC_READ_INPUT_REGISTER:
-    case MB_FC_READ_REGISTERS:
-      if (modH->u8AddressMode == ADDRESS_BROADCAST)
-        break;
-      modH->i8state = process_FC3(modH);
-      break;
-    case MB_FC_WRITE_COIL:
-      modH->i8state = process_FC5(modH);
-      break;
-    case MB_FC_WRITE_REGISTER:
-      modH->i8state = process_FC6(modH);
-      break;
-    case MB_FC_WRITE_MULTIPLE_COILS:
-      modH->i8state = process_FC15(modH);
-      break;
-    case MB_FC_WRITE_MULTIPLE_REGISTERS:
-      modH->i8state = process_FC16(modH);
-      break;
-    default:
-      break;
-    }
-
-    osSemaphoreRelease(modH->ModBusSphrHandle);
-  }
 }
 
 /* ============================================================================
@@ -796,100 +812,121 @@ int16_t getRxBuffer(modbusHandler_t *modH) {
 uint8_t validateRequest(modbusHandler_t *modH)
 {
 #if ENABLE_TCP == 1
-  if (modH->xTypeHW != TCP_HW) {
+    if (modH->xTypeHW != TCP_HW)
 #endif
-    uint16_t u16MsgCRC = (modH->u8Buffer[modH->u8BufferSize - 2] << 8) |
-                         modH->u8Buffer[modH->u8BufferSize - 1];
-    if (calcCRC(modH->u8Buffer, modH->u8BufferSize - 2) != u16MsgCRC) {
-      modH->u16errCnt++;
-      return ERR_BAD_CRC;
+    {
+        uint16_t u16MsgCRC = (modH->u8Buffer[modH->u8BufferSize - 2] << 8) |
+                             modH->u8Buffer[modH->u8BufferSize - 1];
+        if (calcCRC(modH->u8Buffer, modH->u8BufferSize - 2) != u16MsgCRC)
+        {
+            modH->u16errCnt++;
+            return ERR_BAD_CRC;
+        }
     }
-#if ENABLE_TCP == 1
-  }
-#endif
 
-  bool isSupported = false;
-  for (uint8_t i = 0; i < sizeof(fctsupported); i++) {
-    if (fctsupported[i] == modH->u8Buffer[FUNC]) {
-      isSupported = true;
-      break;
+    bool isSupported = false;
+    for (uint8_t i = 0; i < sizeof(fctsupported); i++)
+    {
+        if (fctsupported[i] == modH->u8Buffer[FUNC])
+        {
+            isSupported = true;
+            break;
+        }
     }
-  }
-  if (!isSupported) {
-    modH->u16errCnt++;
-    return EXC_FUNC_CODE;
-  }
+    if (!isSupported)
+    {
+        modH->u16errCnt++;
+        return EXC_FUNC_CODE;
+    }
 
-  uint16_t u16AdRegs = 0, u16NRegs = 0;
-  switch (modH->u8Buffer[FUNC]) {
-  case MB_FC_READ_COILS:
-  case MB_FC_READ_DISCRETE_INPUT:
-  case MB_FC_WRITE_MULTIPLE_COILS:
-    u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]) / 16;
-    u16NRegs = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) / 16;
-    if (word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) % 16)
-      u16NRegs++;
-    if (modH->dynamic_handlers) {
-        /* Динамический режим: проверить, что все адреса зарегистрированы */
-        uint16_t start_reg = u16AdRegs;
-        uint16_t num_regs = u16NRegs;
-        if (!ModbusHandler_CheckRange(start_reg, num_regs))
-            return EXC_ADDR_RANGE;
-    } else {
-        if ((u16AdRegs + u16NRegs) > modH->u16regsize)
-            return EXC_ADDR_RANGE;
-    }
-    u16NRegs = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) / 8;
-    if (word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) % 8)
-      u16NRegs++;
-    u16NRegs += 5;
-    if (u16NRegs > 256)
-      return EXC_REGS_QUANT;
-    break;
+    uint16_t u16AdRegs = 0, u16NRegs = 0;
 
-  case MB_FC_WRITE_COIL:
-    u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]) / 16;
-    if (word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]) % 16)
-      u16AdRegs++;
-    if (modH->dynamic_handlers) {
-        if (!ModbusHandler_CheckRange(u16AdRegs, 1))
-            return EXC_ADDR_RANGE;
-    } else {
-        if (u16AdRegs >= modH->u16regsize)
-            return EXC_ADDR_RANGE;
-    }
-    break;
+    switch (modH->u8Buffer[FUNC])
+    {
+    case MB_FC_READ_COILS:
+    case MB_FC_READ_DISCRETE_INPUT:
+    case MB_FC_WRITE_MULTIPLE_COILS:
+        u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]) / 16;
+        u16NRegs = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) / 16;
+        if (word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) % 16)
+            u16NRegs++;
 
-  case MB_FC_WRITE_REGISTER:
-    u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
-    if (modH->dynamic_handlers) {
-        if (!ModbusHandler_CheckRange(u16AdRegs, 1))
-            return EXC_ADDR_RANGE;
-    } else {
-        if (u16AdRegs >= modH->u16regsize)
-            return EXC_ADDR_RANGE;
-    }
-    break;
+        if (modH->dynamic_handlers)
+        {
+            if (!ModbusHandler_CheckRange(u16AdRegs, u16NRegs))
+                return ERR_SILENT;   // ← вместо EXC_ADDR_RANGE
+        }
+        else
+        {
+            if ((u16AdRegs + u16NRegs) > modH->u16regsize)
+                return EXC_ADDR_RANGE;
+        }
 
-  case MB_FC_READ_REGISTERS:
-  case MB_FC_READ_INPUT_REGISTER:
-  case MB_FC_WRITE_MULTIPLE_REGISTERS:
-    u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
-    u16NRegs = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
-    if (modH->dynamic_handlers) {
-        if (!ModbusHandler_CheckRange(u16AdRegs, u16NRegs))
-            return EXC_ADDR_RANGE;
-    } else {
-        if ((u16AdRegs + u16NRegs) > modH->u16regsize)
-            return EXC_ADDR_RANGE;
+        u16NRegs = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) / 8;
+        if (word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) % 8)
+            u16NRegs++;
+        u16NRegs += 5;
+        if (u16NRegs > 256)
+            return EXC_REGS_QUANT;
+        break;
+
+    case MB_FC_WRITE_COIL:
+        u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]) / 16;
+        if (word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]) % 16)
+            u16AdRegs++;
+
+        if (modH->dynamic_handlers)
+        {
+            if (!ModbusHandler_CheckRange(u16AdRegs, 1))
+                return ERR_SILENT;
+        }
+        else
+        {
+            if (u16AdRegs >= modH->u16regsize)
+                return EXC_ADDR_RANGE;
+        }
+        break;
+
+    case MB_FC_WRITE_REGISTER:
+        u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
+        if (modH->dynamic_handlers)
+        {
+            if (!ModbusHandler_CheckRange(u16AdRegs, 1))
+                return ERR_SILENT;
+        }
+        else
+        {
+            if (u16AdRegs >= modH->u16regsize)
+                return EXC_ADDR_RANGE;
+        }
+        break;
+
+    case MB_FC_READ_REGISTERS:
+    case MB_FC_READ_INPUT_REGISTER:
+    case MB_FC_WRITE_MULTIPLE_REGISTERS:
+        u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
+        u16NRegs = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
+
+        if (modH->dynamic_handlers)
+        {
+            if (!ModbusHandler_CheckRange(u16AdRegs, u16NRegs))
+                return ERR_SILENT;
+        }
+        else
+        {
+            if ((u16AdRegs + u16NRegs) > modH->u16regsize)
+                return EXC_ADDR_RANGE;
+        }
+
+        u16NRegs = u16NRegs * 2 + 5;
+        if (u16NRegs > 256)
+            return EXC_REGS_QUANT;
+        break;
     }
-    u16NRegs = u16NRegs * 2 + 5;
-    if (u16NRegs > 256)
-      return EXC_REGS_QUANT;
-    break;
-  }
-  return 0;
+
+    return 0;
 }
+
 
 /* ============================================================================
  * UTILITY FUNCTIONS
@@ -1113,69 +1150,81 @@ int8_t process_FC1(modbusHandler_t *modH) {
 
 int8_t process_FC3(modbusHandler_t *modH)
 {
-  uint16_t u16StartAdd = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
-  uint8_t u8regsno = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
-  modH->u8Buffer[2] = u8regsno * 2;
-  modH->u8BufferSize = 3;
+    uint16_t u16StartAdd = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
+    uint8_t u8regsno = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
+    modH->u8Buffer[2] = u8regsno * 2;
+    modH->u8BufferSize = 3;
 
-  for (uint16_t i = u16StartAdd; i < u16StartAdd + u8regsno; i++)
-  {
-    uint16_t value = 0;
-    bool handled = false;
+    for (uint16_t i = u16StartAdd; i < u16StartAdd + u8regsno; i++)
+    {
+        bool handled = false;
 
 #if MODBUS_DATA_LAYER_ENABLED == 1
-    if (modH->onReadFlex != NULL)
-    {
-      ModbusDataResponse_t resp;
-      if (modH->onReadFlex(i, &resp) && resp.is_valid)
-      {
-        uint8_t written = ModbusData_SerializeResponse(&resp, modH->u8Buffer,
-                                                       modH->u8BufferSize);
-        if (written > 0)
+        if (modH->onReadFlex != NULL)
         {
-          modH->u8BufferSize += written;
-          i += (resp.reg_count - 1);
-          handled = true;
-          continue;
+            ModbusDataResponse_t resp;
+            ModbusResult_t result = modH->onReadFlex(i, &resp);
+            if (result == MB_RESULT_OK && resp.is_valid)
+            {
+                uint8_t written = ModbusData_SerializeResponse(&resp, modH->u8Buffer,
+                                                               modH->u8BufferSize);
+                if (written > 0)
+                {
+                    modH->u8BufferSize += written;
+                    i += (resp.reg_count - 1);
+                    handled = true;
+                    continue;
+                }
+            }
+            else if (result == MB_RESULT_SILENT)
+            {
+                /* Обработчик просит не отвечать – прекращаем обработку пакета */
+                modH->u8BufferSize = 0;
+                return 0;   /* Ничего не отправляем */
+            }
+            else if (result == MB_RESULT_EXCEPTION)
+            {
+                buildException(EXC_EXECUTE, modH);
+                sendTxBuffer(modH);
+                return -1;
+            }
         }
-      }
-    }
 #endif
 
-    /* If the handler failed to read and dynamic mode is enabled, an error occurs */
-    if (!handled && modH->dynamic_handlers)
-    {
-        buildException(EXC_ADDR_RANGE, modH);
-        sendTxBuffer(modH);
-        return -1;
+        /* Если обработчик не сработал и включён динамический режим – молчание */
+        if (!handled && modH->dynamic_handlers)
+        {
+            modH->u8BufferSize = 0;
+            return 0;
+        }
+
+        /* Fallback для простых обработчиков */
+        if (!handled && modH->onReadSimple != NULL)
+        {
+            uint16_t value = modH->onReadSimple(i);
+            modH->u8Buffer[modH->u8BufferSize++] = highByte(value);
+            modH->u8Buffer[modH->u8BufferSize++] = lowByte(value);
+            handled = true;
+        }
+        else if (!handled && modH->u16regs != NULL)
+        {
+            uint16_t value = modH->u16regs[i];
+            modH->u8Buffer[modH->u8BufferSize++] = highByte(value);
+            modH->u8Buffer[modH->u8BufferSize++] = lowByte(value);
+            handled = true;
+        }
+
+        if (!handled)
+        {
+            buildException(EXC_ADDR_RANGE, modH);
+            sendTxBuffer(modH);
+            return -1;
+        }
     }
 
-    /* Fallback for simple handlers */
-    if (!handled && modH->onReadSimple != NULL)
-    {
-        value = modH->onReadSimple(i);
-        handled = true;
-    }
-    else if (!handled && modH->u16regs != NULL)
-    {
-        value = modH->u16regs[i];
-        handled = true;
-    }
-
-    if (!handled)
-    {
-        buildException(EXC_ADDR_RANGE, modH);
-        sendTxBuffer(modH);
-        return -1;
-    }
-
-    modH->u8Buffer[modH->u8BufferSize++] = highByte(value);
-    modH->u8Buffer[modH->u8BufferSize++] = lowByte(value);
-  }
-
-  uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
-  sendTxBuffer(modH);
-  return u8CopyBufferSize;
+    uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
+    sendTxBuffer(modH);
+    return u8CopyBufferSize;
 }
 
 int8_t process_FC5(modbusHandler_t *modH) {
@@ -1194,49 +1243,68 @@ int8_t process_FC5(modbusHandler_t *modH) {
 
 int8_t process_FC6(modbusHandler_t *modH)
 {
-  uint16_t u16add = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
-  uint16_t u16val = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
-  bool success = false;
+    uint16_t u16add = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
+    uint16_t u16val = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
 
 #if MODBUS_DATA_LAYER_ENABLED == 1
-  if (modH->onWriteFlex != NULL)
-  {
-    ModbusWriteRequest_t req = {.address = u16add,
-                                .data = &modH->u8Buffer[NB_HI],
-                                .byte_count = 2,
-                                .reg_count = 1};
-    success = modH->onWriteFlex(u16add, &req);
-  }
-  else if (modH->onWriteSimple != NULL)
-    success = modH->onWriteSimple(u16add, u16val);
-  else if (modH->u16regs != NULL && !modH->dynamic_handlers) /* only if not in dynamic mode */
-  {
-    modH->u16regs[u16add] = u16val;
-    success = true;
-  }
-#else
-  if (modH->onWriteSimple != NULL)
-    success = modH->onWriteSimple(u16add, u16val);
-  else if (modH->u16regs != NULL && !modH->dynamic_handlers)
-  {
-    modH->u16regs[u16add] = u16val;
-    success = true;
-  }
+    if (modH->onWriteFlex != NULL)
+    {
+        ModbusWriteRequest_t req = {.address = u16add,
+                                    .data = &modH->u8Buffer[NB_HI],
+                                    .byte_count = 2,
+                                    .reg_count = 1};
+        ModbusResult_t result = modH->onWriteFlex(u16add, &req);
+        if (result == MB_RESULT_OK)
+        {
+            modH->u8BufferSize = RESPONSE_SIZE;
+            uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
+            sendTxBuffer(modH);
+            return u8CopyBufferSize;
+        }
+        else if (result == MB_RESULT_SILENT)
+        {
+            modH->u8BufferSize = 0;
+            return 0;
+        }
+        else /* MB_RESULT_EXCEPTION */
+        {
+            buildException(EXC_EXECUTE, modH);
+            sendTxBuffer(modH);
+            return -1;
+        }
+    }
+    else
 #endif
-
-  if (success)
-  {
-    modH->u8BufferSize = RESPONSE_SIZE;
-    uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
-    sendTxBuffer(modH);
-    return u8CopyBufferSize;
-  }
-  else
-  {
-    buildException(EXC_EXECUTE, modH);
-    sendTxBuffer(modH);
-    return -1;
-  }
+    if (modH->onWriteSimple != NULL)
+    {
+        if (modH->onWriteSimple(u16add, u16val))
+        {
+            modH->u8BufferSize = RESPONSE_SIZE;
+            uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
+            sendTxBuffer(modH);
+            return u8CopyBufferSize;
+        }
+        else
+        {
+            buildException(EXC_EXECUTE, modH);
+            sendTxBuffer(modH);
+            return -1;
+        }
+    }
+    else if (modH->u16regs != NULL && !modH->dynamic_handlers)
+    {
+        modH->u16regs[u16add] = u16val;
+        modH->u8BufferSize = RESPONSE_SIZE;
+        uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
+        sendTxBuffer(modH);
+        return u8CopyBufferSize;
+    }
+    else
+    {
+        buildException(EXC_EXECUTE, modH);
+        sendTxBuffer(modH);
+        return -1;
+    }
 }
 int8_t process_FC15(modbusHandler_t *modH) {
   uint16_t u16StartCoil = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
@@ -1270,69 +1338,81 @@ int8_t process_FC15(modbusHandler_t *modH) {
 
 int8_t process_FC16(modbusHandler_t *modH)
 {
-  uint16_t u16StartAdd = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
-  uint16_t u16regsno = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
+    uint16_t u16StartAdd = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
+    uint16_t u16regsno = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
 
   if (modH->dynamic_handlers)
   {
       /* Checking that all registers are registered is already done in validateRequest */
     /* Here we simply write through the handlers */
-  }
-  else
-  {
-      if (u16StartAdd + u16regsno > modH->u16regsize)
-      {
-          buildException(EXC_ADDR_RANGE, modH);
-          sendTxBuffer(modH);
-          return -1;
-      }
-  }
+   }
+    else
+    {
+        if (u16StartAdd + u16regsno > modH->u16regsize)
+        {
+            buildException(EXC_ADDR_RANGE, modH);
+            sendTxBuffer(modH);
+            return -1;
+        }
+    }
 
-  modH->u8Buffer[NB_HI] = 0;
-  modH->u8Buffer[NB_LO] = (uint8_t)u16regsno;
-  modH->u8BufferSize = RESPONSE_SIZE;
+    modH->u8Buffer[NB_HI] = 0;
+    modH->u8Buffer[NB_LO] = (uint8_t)u16regsno;
+    modH->u8BufferSize = RESPONSE_SIZE;
 
-  for (uint16_t i = 0; i < u16regsno; i++)
-  {
-    uint16_t temp = word(modH->u8Buffer[(BYTE_CNT + 1) + i * 2],
-                         modH->u8Buffer[(BYTE_CNT + 2) + i * 2]);
-    bool success = false;
+    for (uint16_t i = 0; i < u16regsno; i++)
+    {
+        uint16_t temp = word(modH->u8Buffer[(BYTE_CNT + 1) + i * 2],
+                             modH->u8Buffer[(BYTE_CNT + 2) + i * 2]);
+        bool success = false;
 
 #if MODBUS_DATA_LAYER_ENABLED == 1
-    if (modH->onWriteFlex != NULL)
-    {
-      ModbusWriteRequest_t req = {.address = u16StartAdd + i,
-                                  .data = &modH->u8Buffer[(BYTE_CNT + 1) + i * 2],
-                                  .byte_count = 2,
-                                  .reg_count = 1};
-      success = modH->onWriteFlex(u16StartAdd + i, &req);
-    }
-    else if (modH->onWriteSimple != NULL)
-      success = modH->onWriteSimple(u16StartAdd + i, temp);
-    else if (modH->u16regs != NULL && !modH->dynamic_handlers)
-    {
-      modH->u16regs[u16StartAdd + i] = temp;
-      success = true;
-    }
-#else
-    if (modH->onWriteSimple != NULL)
-      success = modH->onWriteSimple(u16StartAdd + i, temp);
-    else if (modH->u16regs != NULL && !modH->dynamic_handlers)
-    {
-      modH->u16regs[u16StartAdd + i] = temp;
-      success = true;
-    }
+        if (modH->onWriteFlex != NULL)
+        {
+            ModbusWriteRequest_t req = {.address = u16StartAdd + i,
+                                        .data = &modH->u8Buffer[(BYTE_CNT + 1) + i * 2],
+                                        .byte_count = 2,
+                                        .reg_count = 1};
+            ModbusResult_t result = modH->onWriteFlex(u16StartAdd + i, &req);
+            if (result == MB_RESULT_OK)
+                success = true;
+            else if (result == MB_RESULT_SILENT)
+            {
+                /* Молчание – прерываем и ничего не отправляем */
+                modH->u8BufferSize = 0;
+                return 0;
+            }
+            else /* MB_RESULT_EXCEPTION */
+            {
+                buildException(EXC_EXECUTE, modH);
+                sendTxBuffer(modH);
+                return -1;
+            }
+        }
+        else
 #endif
+        if (modH->onWriteSimple != NULL)
+        {
+            if (modH->onWriteSimple(u16StartAdd + i, temp))
+                success = true;
+            else
+                success = false;
+        }
+        else if (modH->u16regs != NULL && !modH->dynamic_handlers)
+        {
+            modH->u16regs[u16StartAdd + i] = temp;
+            success = true;
+        }
 
-    if (!success)
-    {
-      buildException(EXC_EXECUTE, modH);
-      sendTxBuffer(modH);
-      return -1;
+        if (!success)
+        {
+            buildException(EXC_EXECUTE, modH);
+            sendTxBuffer(modH);
+            return -1;
+        }
     }
-  }
 
-  uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
-  sendTxBuffer(modH);
-  return u8CopyBufferSize;
+    uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
+    sendTxBuffer(modH);
+    return u8CopyBufferSize;
 }

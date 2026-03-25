@@ -68,6 +68,15 @@ extern "C" {
  */
 
 /**
+* @brief Modbus handler execution result
+*/
+typedef enum {
+    MB_RESULT_OK = 0, /**< Success, send a normal response */
+    MB_RESULT_EXCEPTION = 1, /**< Error, send an exception (code 0x04) */
+    MB_RESULT_SILENT = 2 /**< Processed, but do not send a response (silence) */
+} ModbusResult_t;
+
+/**
  * @brief Hardware type enumeration
  */
 typedef enum
@@ -136,6 +145,7 @@ typedef enum ERR_OP_LIST
     ERR_TIME_OUT = 17,              /**< Timeout error */
     ERR_BAD_SLAVE_ID = 18,          /**< Invalid slave ID */
     ERR_BAD_TCP_ID = 19,            /**< Invalid TCP connection ID */
+    ERR_SILENT = 30,                /**< Do not send response (virtual device) */
     /* Operations */
     OP_OK_QUERY = 20                /**< Query completed successfully */
 } mb_err_op_t;
@@ -230,7 +240,7 @@ typedef struct ModbusWriteRequest ModbusWriteRequest_t;
  * @param response Pointer to response structure to fill
  * @return true if successful, false if error
  */
-typedef bool (*ModbusReadFlexHook_t)(uint16_t address, ModbusDataResponse_t *response);
+typedef ModbusResult_t (*ModbusReadFlexHook_t)(uint16_t address, ModbusDataResponse_t *response);
 
 /**
  * @brief Write hook function type for flexible register access
@@ -238,7 +248,7 @@ typedef bool (*ModbusReadFlexHook_t)(uint16_t address, ModbusDataResponse_t *res
  * @param request Pointer to request structure containing data
  * @return true if successful, false if error
  */
-typedef bool (*ModbusWriteFlexHook_t)(uint16_t address, const ModbusWriteRequest_t *request);
+typedef ModbusResult_t (*ModbusWriteFlexHook_t)(uint16_t address, const ModbusWriteRequest_t *request);
 
 /* ============================================================================
  * TCP CONNECTION STRUCTURE

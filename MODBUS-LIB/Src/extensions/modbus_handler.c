@@ -1,61 +1,15 @@
-/*
- * modbus_handler.c
- * 
- * Modbus Handler API - Implementation
- * 
- * This module implements the bridge between the Modbus library callback hooks
- * and the handler registry. It provides the onReadFlex and onWriteFlex
- * callback implementations that the library calls.
- * 
- * Flow:
- * 1. Library receives Modbus request (FC3/FC6/FC16)
- * 2. Library calls modH->onReadFlex() or modH->onWriteFlex()
- * 3. This module looks up address in registry
- * 4. Registry returns descriptor with handler function
- * 5. This module calls the handler with proper parameters
- * 6. Result is returned to library for response generation
- * 
- */
-
-/* ============================================================================
- * INCLUDES
- * ============================================================================ */
-
 #include "modbus_handler.h"
 #include "modbus_registry.h"
 #include "modbus_data.h"
 #include "Modbus.h"
 #include <string.h>
 
-/* ============================================================================
- * INTERNAL STATE
- * ============================================================================ */
-
-/**
- * @brief Current access level
- * 
- * Controls which registers can be accessed. Initialized to RELEASE.
- */
 static volatile uint8_t g_access_level = MODBUS_ACCESS_RELEASE;
-
-/**
- * @brief Application context pointer
- * 
- * Passed to all handler callbacks for project-specific data.
- */
 static void *g_app_context = NULL;
-
-/**
- * @brief Attachment flag
- */
 static bool g_attached = false;
 
 #if MODBUS_DEBUG_ENABLED == 1
-/**
- * @brief Handler statistics
- */
 static ModbusHandlerStats_t g_stats = {0};
-
 #define STAT_INC_READ()     g_stats.read_count++
 #define STAT_INC_WRITE()    g_stats.write_count++
 #define STAT_INC_READ_ERR() g_stats.read_errors++
@@ -71,32 +25,10 @@ static ModbusHandlerStats_t g_stats = {0};
 #define STAT_INC_NOTFOUND()
 #endif
 
-/* ============================================================================
- * ACCESS LEVEL MANAGEMENT
- * ============================================================================ */
+void ModbusHandler_SetAccessLevel(uint8_t level) { g_access_level = level; }
+uint8_t ModbusHandler_GetAccessLevel(void) { return g_access_level; }
 
-void ModbusHandler_SetAccessLevel(uint8_t level)
-{
-    g_access_level = level;
-}
-
-uint8_t ModbusHandler_GetAccessLevel(void)
-{
-    return g_access_level;
-}
-
-/* ============================================================================
- * STATIC HELPER FUNCTIONS
- * ============================================================================ */
-
-/**
- * @brief Check access level permission
- * 
- * @param required_level Minimum level required for this register
- * @return true if access allowed, false if denied
- */
-static inline bool ModbusHandler_CheckAccess(ModbusAccessLevel_t required_level)
-{
+static inline bool ModbusHandler_CheckAccess(ModbusAccessLevel_t required_level) {
 #if MODBUS_HANDLER_CHECK_ACCESS == 1
     return (g_access_level >= required_level);
 #else
@@ -105,154 +37,76 @@ static inline bool ModbusHandler_CheckAccess(ModbusAccessLevel_t required_level)
 #endif
 }
 
-/* ============================================================================
- * READ HOOK IMPLEMENTATION
- * ============================================================================ */
-
-/**
- * @brief Library read callback implementation
- * 
- * This function is called by the Modbus library when a read request
- * (FC3 or FC4) is received. It looks up the address in the registry
- * and calls the registered read handler.
- * 
- * @param address Register address being read
- * @param response Pointer to response structure to fill
- * @return true on success, false on error
- */
-static bool ModbusHandler_ReadHook(uint16_t address, ModbusDataResponse_t *response)
+static ModbusResult_t ModbusHandler_ReadHook(uint16_t address, ModbusDataResponse_t *response)
 {
     STAT_INC_READ();
-    
-    /* Validate input */
-    if (response == NULL)
-    {
-        STAT_INC_READ_ERR();
-        return false;
-    }
-    
-    /* Initialize response as invalid */
+    if (response == NULL) return MB_RESULT_EXCEPTION;
+
     ModbusResp_SetInvalid(response);
-    
-    /* Lookup address in registry */
+
     const ModbusRegDescriptor_t *desc = ModbusRegistry_Lookup(address);
-    
-    if (desc == NULL)
-    {
-        /* Address not registered */
+    if (desc == NULL) {
         STAT_INC_NOTFOUND();
-        return false;
+        return MB_RESULT_SILENT;   // ← not registered → silence
     }
-    
-    /* Check access level */
-    if (!ModbusHandler_CheckAccess(desc->access_level))
-    {
-        /* Access denied - insufficient privilege level */
+
+    if (!ModbusHandler_CheckAccess(desc->access_level)) {
         STAT_INC_ACCESS();
-        return false;
+        return MB_RESULT_EXCEPTION;
     }
-    
-    /* Check if read handler is registered */
-    if (desc->read_hook == NULL)
-    {
-        /* No read handler - register is write-only */
+
+    if (desc->read_hook == NULL) {
         STAT_INC_READ_ERR();
-        return false;
+        return MB_RESULT_EXCEPTION;
     }
-    
-    /* Call the registered read handler */
-    bool success = desc->read_hook(address, response, desc->context);
-    
-    if (!success)
-    {
+
+    ModbusResult_t result = desc->read_hook(address, response, desc->context);
+    if (result != MB_RESULT_OK && result != MB_RESULT_SILENT && result != MB_RESULT_EXCEPTION) {
+        result = MB_RESULT_EXCEPTION;
+    }
+
+    if (result == MB_RESULT_OK && !response->is_valid) {
         STAT_INC_READ_ERR();
-        return false;
+        return MB_RESULT_EXCEPTION;
     }
-    
-    /* Validate response */
-    if (!response->is_valid)
-    {
-        STAT_INC_READ_ERR();
-        return false;
-    }
-    
-    return true;
+
+    return result;
 }
 
-/* ============================================================================
- * WRITE HOOK IMPLEMENTATION
- * ============================================================================ */
-
-/**
- * @brief Library write callback implementation
- * 
- * This function is called by the Modbus library when a write request
- * (FC6 or FC16) is received. It looks up the address in the registry
- * and calls the registered write handler.
- * 
- * @param address Register address being written
- * @param request Pointer to request structure with incoming data
- * @return true on success, false on error
- */
-static bool ModbusHandler_WriteHook(uint16_t address, const ModbusWriteRequest_t *request)
+static ModbusResult_t ModbusHandler_WriteHook(uint16_t address, const ModbusWriteRequest_t *request)
 {
     STAT_INC_WRITE();
-    
-    /* Validate input */
-    if (request == NULL)
-    {
-        STAT_INC_WRITE_ERR();
-        return false;
-    }
-    
-    /* Lookup address in registry */
-    const ModbusRegDescriptor_t *desc = ModbusRegistry_Lookup(address);
-    
-    if (desc == NULL)
-    {
-        /* Address not registered */
-        STAT_INC_NOTFOUND();
-        return false;
-    }
-    
-    /* Check access level */
-    if (!ModbusHandler_CheckAccess(desc->access_level))
-    {
-        /* Access denied - insufficient privilege level */
-        STAT_INC_ACCESS();
-        return false;
-    }
-    
-    /* Check if write handler is registered */
-    if (desc->write_hook == NULL)
-    {
-        /* No write handler - register is read-only */
-        STAT_INC_WRITE_ERR();
-        return false;
-    }
-    
-    /* Call the registered write handler */
-    bool success = desc->write_hook(address, request, desc->context);
-    
-    if (!success)
-    {
-        STAT_INC_WRITE_ERR();
-        return false;
-    }
-    
-    return true;
-}
+    if (request == NULL) return MB_RESULT_EXCEPTION;
 
-/* ============================================================================
- * PUBLIC API - INITIALIZATION
- * ============================================================================ */
+    const ModbusRegDescriptor_t *desc = ModbusRegistry_Lookup(address);
+    if (desc == NULL) {
+        STAT_INC_NOTFOUND();
+        return MB_RESULT_SILENT;  // ← not registered → silence
+    }
+
+    if (!ModbusHandler_CheckAccess(desc->access_level)) {
+        STAT_INC_ACCESS();
+        return MB_RESULT_EXCEPTION;
+    }
+
+    if (desc->write_hook == NULL) {
+        STAT_INC_WRITE_ERR();
+        return MB_RESULT_EXCEPTION;
+    }
+
+    ModbusResult_t result = desc->write_hook(address, request, desc->context);
+    if (result != MB_RESULT_OK && result != MB_RESULT_SILENT && result != MB_RESULT_EXCEPTION) {
+        result = MB_RESULT_EXCEPTION;
+    }
+
+    return result;
+}
 
 void ModbusHandler_Init(void)
 {
     g_access_level = MODBUS_HANDLER_DEFAULT_ACCESS;
     g_app_context = NULL;
     g_attached = false;
-    
 #if MODBUS_DEBUG_ENABLED == 1
     memset(&g_stats, 0, sizeof(g_stats));
 #endif
@@ -260,81 +114,41 @@ void ModbusHandler_Init(void)
 
 void ModbusHandler_Attach(modbusHandler_t *modH, void *appContext)
 {
-    if (modH == NULL)
-    {
-        return;
-    }
-    
-    /* Store application context for handlers */
+    if (modH == NULL) return;
     g_app_context = appContext;
-    
-    /* Attach our hook implementations to the library */
     modH->onReadFlex = ModbusHandler_ReadHook;
     modH->onWriteFlex = ModbusHandler_WriteHook;
-    
-    /* Store context in library structure for handler access */
     modH->appContext = appContext;
-    
-    /* Enable dynamic handler mode – ignore u16regs */
-    modH->dynamic_handlers = true;
-    
+    modH->dynamic_handlers = true;   // ← enable dynamic mode
     g_attached = true;
 }
 
-
 void ModbusHandler_Detach(modbusHandler_t *modH)
 {
-    if (modH == NULL)
-    {
-        return;
-    }
-    
-    /* Clear hooks - library falls back to u16regs */
+    if (modH == NULL) return;
     modH->onReadFlex = NULL;
     modH->onWriteFlex = NULL;
     modH->appContext = NULL;
-    
     g_attached = false;
 }
 
-/* ============================================================================
- * PUBLIC API - STATISTICS (DEBUG)
- * ============================================================================ */
-
-#if MODBUS_DEBUG_ENABLED == 1
-
-void ModbusHandler_GetStats(ModbusHandlerStats_t *stats)
-{
-    if (stats == NULL)
-    {
-        return;
-    }
-    
-    /* Copy statistics atomically */
-    memcpy(stats, &g_stats, sizeof(ModbusHandlerStats_t));
-}
-
-void ModbusHandler_ResetStats(void)
-{
-    memset(&g_stats, 0, sizeof(g_stats));
-}
-
-#endif /* MODBUS_DEBUG_ENABLED */
-
-/* modbus_handler.c – исправленный фрагмент */
-
 bool ModbusHandler_CheckRange(uint16_t start_addr, uint16_t num_regs)
 {
-    for (uint16_t i = 0; i < num_regs; i++)
-    {
+    for (uint16_t i = 0; i < num_regs; i++) {
         if (!ModbusRegistry_IsRegistered(start_addr + i))
-        {
             return false;
-        }
     }
     return true;
 }
 
-/* ============================================================================
- * END OF FILE
- * ============================================================================ */
+#if MODBUS_DEBUG_ENABLED == 1
+void ModbusHandler_GetStats(ModbusHandlerStats_t *stats)
+{
+    if (stats == NULL) return;
+    memcpy(stats, &g_stats, sizeof(ModbusHandlerStats_t));
+}
+void ModbusHandler_ResetStats(void)
+{
+    memset(&g_stats, 0, sizeof(g_stats));
+}
+#endif
