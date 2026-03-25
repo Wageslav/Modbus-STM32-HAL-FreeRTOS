@@ -90,6 +90,8 @@
 #define MODBUS_CUSTOM_BROADCAST_ENABLED 1
 #endif
 
+/* Enable asynchronous logging to prevent blocking Modbus communication */
+#define  USE_ASYNC_LOGGER 1
 /* ============================================================================
  * TRANSPORT LAYERS
  * ============================================================================
