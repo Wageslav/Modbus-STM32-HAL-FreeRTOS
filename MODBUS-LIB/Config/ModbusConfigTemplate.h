@@ -85,6 +85,11 @@
  */
 #define MODBUS_SYNC_ENABLED         1
 
+/* Enable custom broadcast protocol (FC6 with 1-byte command + 3-byte mask) */
+#ifndef MODBUS_CUSTOM_BROADCAST_ENABLED
+#define MODBUS_CUSTOM_BROADCAST_ENABLED 1
+#endif
+
 /* ============================================================================
  * TRANSPORT LAYERS
  * ============================================================================

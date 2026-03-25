@@ -76,6 +76,17 @@ typedef enum {
     MB_RESULT_SILENT = 2 /**< Processed, but do not send a response (silence) */
 } ModbusResult_t;
 
+/* ============================================================================
+ * ACCESS LEVEL ENUMERATION
+ * ============================================================================ */
+
+typedef enum {
+    MODBUS_ACCESS_RELEASE = 0,    /**< Production access */
+    MODBUS_ACCESS_SERVICE = 1,    /**< Service access */
+    MODBUS_ACCESS_DEBUG = 2,      /**< Debug access */
+} ModbusAccessLevel_t;
+
+
 /**
  * @brief Hardware type enumeration
  */

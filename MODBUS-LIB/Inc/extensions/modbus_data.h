@@ -82,6 +82,7 @@ typedef struct ModbusWriteRequest
     const uint8_t *data;        /**< Pointer to raw bytes from Modbus frame */
     uint16_t byte_count;        /**< Number of bytes in the request */
     uint16_t reg_count;         /**< Number of registers requested */
+    bool is_broadcast;          /**< Flag: request is a broadcast */
 } ModbusWriteRequest_t;
 
 /* ============================================================================

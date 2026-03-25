@@ -839,6 +839,12 @@ uint8_t validateRequest(modbusHandler_t *modH)
         return EXC_FUNC_CODE;
     }
 
+    /* Broadcast requests always pass validation (skip address checks) */
+    if (modH->u8Buffer[ID] == ADDRESS_BROADCAST)
+    {
+        return 0;
+    }
+
     uint16_t u16AdRegs = 0, u16NRegs = 0;
 
     switch (modH->u8Buffer[FUNC])
@@ -854,7 +860,7 @@ uint8_t validateRequest(modbusHandler_t *modH)
         if (modH->dynamic_handlers)
         {
             if (!ModbusHandler_CheckRange(u16AdRegs, u16NRegs))
-                return ERR_SILENT;   // ← вместо EXC_ADDR_RANGE
+                return ERR_SILENT;
         }
         else
         {
@@ -1239,20 +1245,45 @@ int8_t process_FC5(modbusHandler_t *modH) {
   return u8CopyBufferSize;
 }
 
-/* Modbus.c – фрагмент process_FC6 */
-
 int8_t process_FC6(modbusHandler_t *modH)
 {
     uint16_t u16add = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
     uint16_t u16val = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
 
-#if MODBUS_DATA_LAYER_ENABLED == 1
     if (modH->onWriteFlex != NULL)
     {
-        ModbusWriteRequest_t req = {.address = u16add,
-                                    .data = &modH->u8Buffer[NB_HI],
-                                    .byte_count = 2,
-                                    .reg_count = 1};
+        ModbusWriteRequest_t req;
+        req.address = u16add;
+        req.reg_count = 1;
+        req.is_broadcast = (modH->u8AddressMode == ADDRESS_BROADCAST);
+
+#if MODBUS_CUSTOM_BROADCAST_ENABLED == 1
+        if (req.is_broadcast)
+        {
+            // Кастомный формат: команда в старшем байте адреса,
+            // маска: младший байт адреса + два байта данных (24 бита)
+            uint8_t cmd = modH->u8Buffer[ADD_HI];
+            uint32_t mask = ((uint32_t)modH->u8Buffer[ADD_LO] << 16) |
+                            ((uint32_t)modH->u8Buffer[NB_HI] << 8) |
+                            ((uint32_t)modH->u8Buffer[NB_LO]);
+
+            static uint8_t broadcast_data[4]; // статический для стабильности указателя
+            broadcast_data[0] = cmd;
+            broadcast_data[1] = (mask >> 16) & 0xFF;
+            broadcast_data[2] = (mask >> 8) & 0xFF;
+            broadcast_data[3] = mask & 0xFF;
+
+            req.data = broadcast_data;
+            req.byte_count = 4;
+            req.reg_count = 2; // 4 байта = 2 регистра
+        }
+        else
+#endif
+        {
+            req.data = &modH->u8Buffer[NB_HI];
+            req.byte_count = 2;
+        }
+
         ModbusResult_t result = modH->onWriteFlex(u16add, &req);
         if (result == MB_RESULT_OK)
         {
@@ -1273,9 +1304,7 @@ int8_t process_FC6(modbusHandler_t *modH)
             return -1;
         }
     }
-    else
-#endif
-    if (modH->onWriteSimple != NULL)
+    else if (modH->onWriteSimple != NULL)
     {
         if (modH->onWriteSimple(u16add, u16val))
         {

@@ -36,16 +36,6 @@ typedef enum {
 } ModbusRegType_t;
 
 /* ============================================================================
- * ACCESS LEVEL ENUMERATION
- * ============================================================================ */
-
-typedef enum {
-    MODBUS_ACCESS_RELEASE = 0,    /**< Production access */
-    MODBUS_ACCESS_SERVICE = 1,    /**< Service access */
-    MODBUS_ACCESS_DEBUG = 2,      /**< Debug access */
-} ModbusAccessLevel_t;
-
-/* ============================================================================
  * HANDLER FUNCTION TYPES
  * ============================================================================ */
 
@@ -78,6 +68,16 @@ typedef ModbusResult_t (*ModbusWriteHook_t)(uint16_t address,
 typedef bool (*ModbusReadHook_t)(uint16_t address, uint16_t *value, void *context);
 typedef bool (*ModbusWriteHook_t)(uint16_t address, uint16_t value, void *context);
 #endif
+
+/**
+ * @brief Structure for custom broadcast command handler
+ */
+typedef struct {
+    uint8_t command_code;                     /**< One-byte command code */
+    ModbusWriteHook_t handler;                /**< Handler function (receives mask in data[1..3]) */
+    ModbusAccessLevel_t access_level;         /**< Access level required */
+} ModbusBroadcastCommand_t;
+
 
 /* ============================================================================
  * REGISTER DESCRIPTOR STRUCTURE

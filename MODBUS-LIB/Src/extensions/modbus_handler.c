@@ -8,6 +8,11 @@ static volatile uint8_t g_access_level = MODBUS_ACCESS_RELEASE;
 static void *g_app_context = NULL;
 static bool g_attached = false;
 
+#if MODBUS_CUSTOM_BROADCAST_ENABLED == 1
+extern const ModbusBroadcastCommand_t g_broadcast_commands[];
+extern size_t g_broadcast_commands_count;
+#endif
+
 #if MODBUS_DEBUG_ENABLED == 1
 static ModbusHandlerStats_t g_stats = {0};
 #define STAT_INC_READ()     g_stats.read_count++
@@ -78,10 +83,36 @@ static ModbusResult_t ModbusHandler_WriteHook(uint16_t address, const ModbusWrit
     STAT_INC_WRITE();
     if (request == NULL) return MB_RESULT_EXCEPTION;
 
+#if MODBUS_CUSTOM_BROADCAST_ENABLED == 1
+    /* Handle custom broadcast commands */
+    if (request->is_broadcast && request->byte_count >= 4)
+    {
+        uint8_t cmd = request->data[0];                         // command code
+        // mask is in request->data[1..3]
+        for (size_t i = 0; i < g_broadcast_commands_count; i++)
+        {
+            if (g_broadcast_commands[i].command_code == cmd)
+            {
+                if (g_access_level >= g_broadcast_commands[i].access_level)
+                {
+                    return g_broadcast_commands[i].handler(address, request, NULL);
+                }
+                else
+                {
+                    return MB_RESULT_EXCEPTION; // access denied
+                }
+            }
+        }
+        /* Command not found – silently ignore (no response) */
+        return MB_RESULT_SILENT;
+    }
+#endif
+
+    /* Standard register lookup */
     const ModbusRegDescriptor_t *desc = ModbusRegistry_Lookup(address);
     if (desc == NULL) {
         STAT_INC_NOTFOUND();
-        return MB_RESULT_SILENT;  // ← not registered → silence
+        return MB_RESULT_SILENT;   // not registered – silent
     }
 
     if (!ModbusHandler_CheckAccess(desc->access_level)) {
