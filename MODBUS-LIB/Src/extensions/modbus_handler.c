@@ -275,8 +275,12 @@ void ModbusHandler_Attach(modbusHandler_t *modH, void *appContext)
     /* Store context in library structure for handler access */
     modH->appContext = appContext;
     
+    /* Enable dynamic handler mode – ignore u16regs */
+    modH->dynamic_handlers = true;
+    
     g_attached = true;
 }
+
 
 void ModbusHandler_Detach(modbusHandler_t *modH)
 {
@@ -316,6 +320,20 @@ void ModbusHandler_ResetStats(void)
 }
 
 #endif /* MODBUS_DEBUG_ENABLED */
+
+/* modbus_handler.c – исправленный фрагмент */
+
+bool ModbusHandler_CheckRange(uint16_t start_addr, uint16_t num_regs)
+{
+    for (uint16_t i = 0; i < num_regs; i++)
+    {
+        if (!ModbusRegistry_IsRegistered(start_addr + i))
+        {
+            return false;
+        }
+    }
+    return true;
+}
 
 /* ============================================================================
  * END OF FILE

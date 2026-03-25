@@ -107,6 +107,19 @@ void ModbusHandler_ResetStats(void);
 
 #endif /* MODBUS_DEBUG_ENABLED */
 
+/* ============================================================================
+ * PUBLIC API - LOOKUP
+ * ============================================================================ */
+
+/**
+ * @brief Check if a range of registers is fully covered by registry
+ * @param start_addr Starting address
+ * @param num_regs Number of registers
+ * @return true if all addresses are registered, false otherwise
+ */
+bool ModbusHandler_CheckRange(uint16_t start_addr, uint16_t num_regs);
+
+
 #ifdef __cplusplus
 }
 #endif

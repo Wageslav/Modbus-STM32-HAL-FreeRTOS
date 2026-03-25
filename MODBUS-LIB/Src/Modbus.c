@@ -21,6 +21,7 @@
 
 
 #include "Modbus.h"
+#include "modbus_handler.h"
 #include "ports/modbus_port.h"
 
 
@@ -255,7 +256,8 @@ void ModbusStart(modbusHandler_t *modH) {
     if (modH->EN_Port != NULL)
       ModbusPort_GpioWrite(modH->EN_Port, modH->EN_Pin, MODBUS_GPIO_RESET);
 
-    if (modH->uModbusType == MB_SLAVE && modH->u16regs == NULL)
+    /* Allow u16regs == NULL if dynamic handlers are used */
+    if (modH->uModbusType == MB_SLAVE && modH->u16regs == NULL && !modH->dynamic_handlers)
       while (1)
         ;
 
@@ -789,7 +791,10 @@ int16_t getRxBuffer(modbusHandler_t *modH) {
   return i16result;
 }
 
-uint8_t validateRequest(modbusHandler_t *modH) {
+/* Modbus.c – фрагмент validateRequest */
+
+uint8_t validateRequest(modbusHandler_t *modH)
+{
 #if ENABLE_TCP == 1
   if (modH->xTypeHW != TCP_HW) {
 #endif
@@ -824,8 +829,16 @@ uint8_t validateRequest(modbusHandler_t *modH) {
     u16NRegs = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) / 16;
     if (word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) % 16)
       u16NRegs++;
-    if ((u16AdRegs + u16NRegs) > modH->u16regsize)
-      return EXC_ADDR_RANGE;
+    if (modH->dynamic_handlers) {
+        /* Динамический режим: проверить, что все адреса зарегистрированы */
+        uint16_t start_reg = u16AdRegs;
+        uint16_t num_regs = u16NRegs;
+        if (!ModbusHandler_CheckRange(start_reg, num_regs))
+            return EXC_ADDR_RANGE;
+    } else {
+        if ((u16AdRegs + u16NRegs) > modH->u16regsize)
+            return EXC_ADDR_RANGE;
+    }
     u16NRegs = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) / 8;
     if (word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]) % 8)
       u16NRegs++;
@@ -833,25 +846,43 @@ uint8_t validateRequest(modbusHandler_t *modH) {
     if (u16NRegs > 256)
       return EXC_REGS_QUANT;
     break;
+
   case MB_FC_WRITE_COIL:
     u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]) / 16;
     if (word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]) % 16)
       u16AdRegs++;
-    if (u16AdRegs >= modH->u16regsize)
-      return EXC_ADDR_RANGE;
+    if (modH->dynamic_handlers) {
+        if (!ModbusHandler_CheckRange(u16AdRegs, 1))
+            return EXC_ADDR_RANGE;
+    } else {
+        if (u16AdRegs >= modH->u16regsize)
+            return EXC_ADDR_RANGE;
+    }
     break;
+
   case MB_FC_WRITE_REGISTER:
     u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
-    if (u16AdRegs >= modH->u16regsize)
-      return EXC_ADDR_RANGE;
+    if (modH->dynamic_handlers) {
+        if (!ModbusHandler_CheckRange(u16AdRegs, 1))
+            return EXC_ADDR_RANGE;
+    } else {
+        if (u16AdRegs >= modH->u16regsize)
+            return EXC_ADDR_RANGE;
+    }
     break;
+
   case MB_FC_READ_REGISTERS:
   case MB_FC_READ_INPUT_REGISTER:
   case MB_FC_WRITE_MULTIPLE_REGISTERS:
     u16AdRegs = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
     u16NRegs = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
-    if ((u16AdRegs + u16NRegs) > modH->u16regsize)
-      return EXC_ADDR_RANGE;
+    if (modH->dynamic_handlers) {
+        if (!ModbusHandler_CheckRange(u16AdRegs, u16NRegs))
+            return EXC_ADDR_RANGE;
+    } else {
+        if ((u16AdRegs + u16NRegs) > modH->u16regsize)
+            return EXC_ADDR_RANGE;
+    }
     u16NRegs = u16NRegs * 2 + 5;
     if (u16NRegs > 256)
       return EXC_REGS_QUANT;
@@ -1080,35 +1111,63 @@ int8_t process_FC1(modbusHandler_t *modH) {
   return u8CopyBufferSize;
 }
 
-int8_t process_FC3(modbusHandler_t *modH) {
+int8_t process_FC3(modbusHandler_t *modH)
+{
   uint16_t u16StartAdd = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
   uint8_t u8regsno = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
   modH->u8Buffer[2] = u8regsno * 2;
   modH->u8BufferSize = 3;
 
-  for (uint16_t i = u16StartAdd; i < u16StartAdd + u8regsno; i++) {
+  for (uint16_t i = u16StartAdd; i < u16StartAdd + u8regsno; i++)
+  {
     uint16_t value = 0;
+    bool handled = false;
 
 #if MODBUS_DATA_LAYER_ENABLED == 1
-    if (modH->onReadFlex != NULL) {
+    if (modH->onReadFlex != NULL)
+    {
       ModbusDataResponse_t resp;
-      if (modH->onReadFlex(i, &resp) && resp.is_valid) {
+      if (modH->onReadFlex(i, &resp) && resp.is_valid)
+      {
         uint8_t written = ModbusData_SerializeResponse(&resp, modH->u8Buffer,
                                                        modH->u8BufferSize);
-        if (written > 0) {
+        if (written > 0)
+        {
           modH->u8BufferSize += written;
-          // Пропускаем остальные регистры этого блока
           i += (resp.reg_count - 1);
+          handled = true;
           continue;
         }
       }
     }
 #endif
-    // fallback ...
-    if (modH->onReadSimple != NULL)
-      value = modH->onReadSimple(i);
-    else if (modH->u16regs != NULL)
-      value = modH->u16regs[i];
+
+    /* If the handler failed to read and dynamic mode is enabled, an error occurs */
+    if (!handled && modH->dynamic_handlers)
+    {
+        buildException(EXC_ADDR_RANGE, modH);
+        sendTxBuffer(modH);
+        return -1;
+    }
+
+    /* Fallback for simple handlers */
+    if (!handled && modH->onReadSimple != NULL)
+    {
+        value = modH->onReadSimple(i);
+        handled = true;
+    }
+    else if (!handled && modH->u16regs != NULL)
+    {
+        value = modH->u16regs[i];
+        handled = true;
+    }
+
+    if (!handled)
+    {
+        buildException(EXC_ADDR_RANGE, modH);
+        sendTxBuffer(modH);
+        return -1;
+    }
 
     modH->u8Buffer[modH->u8BufferSize++] = highByte(value);
     modH->u8Buffer[modH->u8BufferSize++] = lowByte(value);
@@ -1131,43 +1190,54 @@ int8_t process_FC5(modbusHandler_t *modH) {
   return u8CopyBufferSize;
 }
 
-int8_t process_FC6(modbusHandler_t *modH) {
+/* Modbus.c – фрагмент process_FC6 */
+
+int8_t process_FC6(modbusHandler_t *modH)
+{
   uint16_t u16add = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
   uint16_t u16val = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
   bool success = false;
 
 #if MODBUS_DATA_LAYER_ENABLED == 1
-  if (modH->onWriteFlex != NULL) {
+  if (modH->onWriteFlex != NULL)
+  {
     ModbusWriteRequest_t req = {.address = u16add,
                                 .data = &modH->u8Buffer[NB_HI],
                                 .byte_count = 2,
                                 .reg_count = 1};
     success = modH->onWriteFlex(u16add, &req);
-  } else if (modH->onWriteSimple != NULL)
+  }
+  else if (modH->onWriteSimple != NULL)
     success = modH->onWriteSimple(u16add, u16val);
-  else if (modH->u16regs != NULL) {
+  else if (modH->u16regs != NULL && !modH->dynamic_handlers) /* only if not in dynamic mode */
+  {
     modH->u16regs[u16add] = u16val;
     success = true;
   }
 #else
-  if (modH->u16regs != NULL) {
+  if (modH->onWriteSimple != NULL)
+    success = modH->onWriteSimple(u16add, u16val);
+  else if (modH->u16regs != NULL && !modH->dynamic_handlers)
+  {
     modH->u16regs[u16add] = u16val;
     success = true;
   }
 #endif
 
-  if (success) {
+  if (success)
+  {
     modH->u8BufferSize = RESPONSE_SIZE;
     uint8_t u8CopyBufferSize = modH->u8BufferSize + 2;
     sendTxBuffer(modH);
     return u8CopyBufferSize;
-  } else {
+  }
+  else
+  {
     buildException(EXC_EXECUTE, modH);
     sendTxBuffer(modH);
     return -1;
   }
 }
-
 int8_t process_FC15(modbusHandler_t *modH) {
   uint16_t u16StartCoil = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
   uint16_t u16Coilno = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
@@ -1196,46 +1266,66 @@ int8_t process_FC15(modbusHandler_t *modH) {
   return u8CopyBufferSize;
 }
 
-int8_t process_FC16(modbusHandler_t *modH) {
+/* Modbus.c – фрагмент process_FC16 */
+
+int8_t process_FC16(modbusHandler_t *modH)
+{
   uint16_t u16StartAdd = word(modH->u8Buffer[ADD_HI], modH->u8Buffer[ADD_LO]);
   uint16_t u16regsno = word(modH->u8Buffer[NB_HI], modH->u8Buffer[NB_LO]);
 
-  if (u16StartAdd + u16regsno > modH->u16regsize) {
-    buildException(EXC_ADDR_RANGE, modH);
-    sendTxBuffer(modH);
-    return -1;
+  if (modH->dynamic_handlers)
+  {
+      /* Checking that all registers are registered is already done in validateRequest */
+    /* Here we simply write through the handlers */
+  }
+  else
+  {
+      if (u16StartAdd + u16regsno > modH->u16regsize)
+      {
+          buildException(EXC_ADDR_RANGE, modH);
+          sendTxBuffer(modH);
+          return -1;
+      }
   }
 
   modH->u8Buffer[NB_HI] = 0;
   modH->u8Buffer[NB_LO] = (uint8_t)u16regsno;
   modH->u8BufferSize = RESPONSE_SIZE;
 
-  for (uint16_t i = 0; i < u16regsno; i++) {
+  for (uint16_t i = 0; i < u16regsno; i++)
+  {
     uint16_t temp = word(modH->u8Buffer[(BYTE_CNT + 1) + i * 2],
                          modH->u8Buffer[(BYTE_CNT + 2) + i * 2]);
     bool success = false;
 
 #if MODBUS_DATA_LAYER_ENABLED == 1
-    if (modH->onWriteFlex != NULL) {
+    if (modH->onWriteFlex != NULL)
+    {
       ModbusWriteRequest_t req = {.address = u16StartAdd + i,
-                                  .data =
-                                      &modH->u8Buffer[(BYTE_CNT + 1) + i * 2],
+                                  .data = &modH->u8Buffer[(BYTE_CNT + 1) + i * 2],
                                   .byte_count = 2,
                                   .reg_count = 1};
       success = modH->onWriteFlex(u16StartAdd + i, &req);
-    } else if (modH->onWriteSimple != NULL)
+    }
+    else if (modH->onWriteSimple != NULL)
       success = modH->onWriteSimple(u16StartAdd + i, temp);
-    else if (modH->u16regs != NULL) {
+    else if (modH->u16regs != NULL && !modH->dynamic_handlers)
+    {
       modH->u16regs[u16StartAdd + i] = temp;
       success = true;
     }
 #else
-    if (modH->u16regs != NULL) {
+    if (modH->onWriteSimple != NULL)
+      success = modH->onWriteSimple(u16StartAdd + i, temp);
+    else if (modH->u16regs != NULL && !modH->dynamic_handlers)
+    {
       modH->u16regs[u16StartAdd + i] = temp;
       success = true;
     }
 #endif
-    if (!success) {
+
+    if (!success)
+    {
       buildException(EXC_EXECUTE, modH);
       sendTxBuffer(modH);
       return -1;

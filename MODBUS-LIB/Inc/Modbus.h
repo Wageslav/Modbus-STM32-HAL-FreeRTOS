@@ -343,6 +343,12 @@ typedef struct
      */
     uint16_t (*onReadSimple)(uint16_t addr);            /**< Simple read hook */
     bool (*onWriteSimple)(uint16_t addr, uint16_t value); /**< Simple write hook */
+
+    /* ========================================================================
+     * DYNAMIC HANDLER MODE FLAG
+     * ========================================================================
+     */
+    bool dynamic_handlers;                  /**< Use registry, ignore u16regs */
     
 } modbusHandler_t;
 
