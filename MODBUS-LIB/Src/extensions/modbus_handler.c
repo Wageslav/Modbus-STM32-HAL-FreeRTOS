@@ -10,7 +10,7 @@ static bool g_attached = false;
 
 #if MODBUS_CUSTOM_BROADCAST_ENABLED == 1
 extern const ModbusBroadcastCommand_t g_broadcast_commands[];
-extern size_t g_broadcast_commands_count;
+extern const size_t g_broadcast_commands_count;
 #endif
 
 #if MODBUS_DEBUG_ENABLED == 1
