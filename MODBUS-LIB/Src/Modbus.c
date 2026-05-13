@@ -25,7 +25,7 @@
 #include "ports/modbus_port.h"
 
 #ifdef USE_ASYNC_LOGGER
-#include "debug_log.h"
+//#include "debug_log.h"
 #endif
 
 #if ENABLE_TCP == 1
@@ -1002,7 +1002,7 @@ static void sendTxBuffer(modbusHandler_t *modH) {
 #ifdef USE_ASYNC_LOGGER
     /* === NOTIFY LOGGER: Modbus transmission starting === */
     /* This blocks log transmission until Modbus completes */
-    debug_set_uart_busy(true);
+    //debug_set_uart_busy(true);
 #endif
     /* RS485 DE/EN pin control - enable transmitter */
     if (modH->EN_Port != NULL)
@@ -1031,7 +1031,7 @@ static void sendTxBuffer(modbusHandler_t *modH) {
 
     /* === NOTIFY LOGGER: Modbus transmission complete === */
     /* Logger can now send queued messages */
-    debug_set_uart_busy(false);
+    //debug_set_uart_busy(false);
 
     /* Reset timeout timer for Master mode */
     if (modH->uModbusType == MB_MASTER)
